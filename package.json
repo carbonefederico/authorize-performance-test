@@ -1,0 +1,10 @@
+{
+  "name": "authorize-performance-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PAZ sideband decision-path performance test (deployment-package / embedded-PDP mode)",
+  "scripts": {
+    "test": "node --test test/unit/"
+  }
+}
