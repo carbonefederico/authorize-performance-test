@@ -1,0 +1,85 @@
+# paz chart defaults — lab posture, cluster-internal only (no Ingress, no
+# cert-manager, no public DNS). Everything lives under `ping-devops:` (the
+# subchart dependency name); the Ping chart reads its values from there.
+#
+# Product pin: tag 2607 — 2608 ships a pre-configured /opt/server instance
+# whose config.ldif breaks the standalone-profile bootstrap (see the sibling
+# agentgateway-stack values file). 2607 is the tag the operator's working PAZ
+# deployments run.
+#
+# Deploy order (scripts/deploy.sh): PAP first (pingauthorize.enabled stays
+# false), then the deployment package is built against PAP's API and pushed
+# to the profile repo, then PAZ is enabled — it boots with the package file
+# already in its server profile.
+
+ping-devops:
+  global:
+    envs:
+      PING_IDENTITY_ACCEPT_EULA: "YES"
+    image:
+      tag: "2607"
+    license:
+      secret:
+        devOps: paz-devops-secret
+    privateCert:
+      generate: true     # in-cluster listener TLS via the chart's private cert; no cert-manager here
+    ingress:
+      enabled: false
+
+  pingauthorize:
+    enabled: false       # deploy.sh flips this to true after the package lands
+    envs:
+      SERVER_PROFILE_URL: ""    # injected via --set-string from scripts/deploy.sh
+      SERVER_PROFILE_PATH: "pingauthorize"
+    workload:
+      type: StatefulSet
+      statefulSet:
+        persistentvolume:
+          enabled: false   # ephemeral /opt/out: PAZ rebuilds from the profile on every start
+    container:
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: "2"
+          memory: 3Gi
+        limits:
+          cpu: "4"
+          memory: 6Gi
+      env:
+        - name: SIDEBAND_SHARED_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: paz-secrets
+              key: sideband-shared-secret
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: pingauthorize
+                    app.kubernetes.io/instance: paz
+
+  pingauthorizepap:
+    enabled: true
+    envs:
+      SERVER_PROFILE_URL: ""
+      SERVER_PROFILE_PATH: "pingauthorizepap"
+    workload:
+      type: StatefulSet
+      statefulSet:
+        persistentvolume:
+          enabled: false
+    container:
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+
+  pingdataconsole:
+    enabled: false
