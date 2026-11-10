@@ -1,0 +1,21 @@
+# 30-embedded-pdp.dsconfig.subst — embedded PDP mode from a deployment
+# package file. This is the whole point of this stack: the policy state is
+# loaded INTO the PAZ process (no PAP round trip per decision, no external
+# policy server, no store polling). The package is built once from PAP by
+# scripts/build-package.sh and ships in this profile at
+# instance/server/default/data/agentgateway-portfolio-mcp.deploymentpackage.
+#
+# ${PAZ_PACKAGE_PATH} is the in-container absolute path of that file.
+#
+# Property spelling: documentation shows both deployment-package and
+# deployment-package-path across PingAuthorize versions. Verify against this
+# image (dsconfig set-policy-decision-service-prop --help) on first deploy
+# and record the winner in ../../README.md; adjust here if it differs.
+#
+# trust-framework-version matches the sibling's pin (v2); keep unless the
+# image rejects it.
+
+dsconfig set-policy-decision-service-prop \
+    --set pdp-mode:embedded \
+    --set deployment-package:${PAZ_PACKAGE_PATH} \
+    --set trust-framework-version:v2

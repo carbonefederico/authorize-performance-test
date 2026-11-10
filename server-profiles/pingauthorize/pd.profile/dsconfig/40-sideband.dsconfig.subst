@@ -1,0 +1,35 @@
+# 40-sideband.dsconfig.subst — sideband shared secret + endpoint for the
+# load generator. Adapted from the sibling agentgateway stack's
+# 40-agp.dsconfig.subst: the secret and header blocks are identical (the k6
+# script sends PDG-TOKEN, as the sibling's adapter did); the endpoint keeps
+# service:AgentGateway and base-path:/mcp but points at the local
+# PerfSubjectJWT validator instead of the internet-hosted JWT-Lab.
+#
+# Environment variables (injected from K8s Secrets via the chart values):
+#   SIDEBAND_SHARED_SECRET — value shared with the load generator
+#
+# The service MUST stay the generic "AgentGateway" service — the PAP tree's
+# top wrapper PolicySet is targeted at it, and per-MCP selection happens one
+# level down via the wrapper's leaf attribute ("Portfolio MCP" PolicySet,
+# condition leaf == "portfolio"). Pointing the endpoint at the per-MCP
+# service instead leaves the top wrapper N/A for every request: every
+# decision comes back NOT_APPLICABLE, all permits fail and all denies pass
+# vacuously.
+
+# Order matters: the shared secret must exist before the Sideband API
+# extension references it.
+dsconfig create-sideband-api-shared-secret \
+    --secret-name AGENTGATEWAY-SIDEBAND \
+    --set "shared-secret:${SIDEBAND_SHARED_SECRET}"
+
+# Header name must match what the load generator sends (PDG-TOKEN).
+dsconfig set-http-servlet-extension-prop \
+    --extension-name "Sideband API" \
+    --set shared-secret-header-name:PDG-TOKEN \
+    --add "shared-secrets:AGENTGATEWAY-SIDEBAND"
+
+dsconfig create-sideband-api-endpoint \
+    --endpoint-name "AgentGateway Portfolio MCP" \
+    --set service:AgentGateway \
+    --set access-token-validator:PerfSubjectJWT \
+    --set base-path:/mcp

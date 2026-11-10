@@ -1,0 +1,23 @@
+# 20-token-validator.dsconfig.subst — local trusted-certificate model.
+# This stack has no JWKS server: subject tokens are self-signed RS256 by the
+# load generator with the key whose public certificate ships in this profile
+# (instance/server/default/data/perf-subject-cert.pem, CN and kid
+# perf-subject-key). PAZ validates the signature against the imported
+# certificate — no remote fetch, no cache, no rotation behavior on the
+# measured path.
+#
+# ${PAZ_CERT_PATH} is the in-container absolute path of the certificate.
+# Verify the server root on first deploy (find / -name perf-subject-cert.pem)
+# and record it in ../../README.md; adjust this file if the overlay lands
+# elsewhere.
+
+dsconfig create-trusted-certificate \
+    --certificate-name perf-subject-key \
+    --set "certificate<${PAZ_CERT_PATH}"
+
+dsconfig create-access-token-validator \
+    --validator-name PerfSubjectJWT \
+    --type jwt \
+    --set enabled:true \
+    --set allowed-signing-algorithm:RS256 \
+    --set signing-certificate:perf-subject-key
