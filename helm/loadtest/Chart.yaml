@@ -1,0 +1,6 @@
+apiVersion: v2
+name: loadtest
+description: k6 agent chart for the PAZ sideband decision-path campaign (indexed Job, N parallel agents)
+type: application
+version: 0.1.0
+appVersion: "2.2.0"
