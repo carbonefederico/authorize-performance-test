@@ -2,7 +2,7 @@
 # deploy.sh — phased deployment of the PAZ sideband performance stack.
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
-#   ./scripts/deploy.sh prep       sync profile repo + install chart (PAP only, PAZ disabled)
+#   ./scripts/deploy.sh prep       create secrets, sync profile repo, install chart (PAP only, PAZ disabled)
 #   ./scripts/deploy.sh package    wait for PAP, build the deployment package from its API
 #   ./scripts/deploy.sh runtime    push profile (now with package+cert) + enable PAZ, wait Ready
 #
@@ -37,6 +37,7 @@ case "${phase}" in
     ;;
 
   prep)
+    "${ROOT_DIR}/scripts/create-secrets.sh"
     "${ROOT_DIR}/scripts/sync-profile-repo.sh"
     if helm -n "${NAMESPACE}" status "${PAZ_RELEASE}" > /dev/null 2>&1; then
       echo "Release ${PAZ_RELEASE} already exists; upgrading with PAZ disabled."
@@ -48,7 +49,7 @@ case "${phase}" in
     fi
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
-    echo "prep: PAP is Ready (PAZ still disabled)."
+    echo "prep: secrets created and PAP is Ready (PAZ still disabled)."
     ;;
 
   package)

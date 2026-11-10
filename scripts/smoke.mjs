@@ -9,7 +9,13 @@
 //   (c) a second valid token with sub vip-user-042 -> permit (rotation).
 // Exit 1 on any miss; prints each decision JSON (lab tokens only, nothing
 // to redact).
-import { buildSidebandEnvelope, buildClaims, signToken } from "./smoke-helpers.mjs";
+import { signToken } from "./smoke-helpers.mjs";
+// The smoke test must produce exactly what the load generator produces, so
+// the envelope and claims come from the SAME module the k6 script imports
+// (envelope.mjs — unit-tested against the sibling adapter's schema).
+// smoke-helpers contributes only the Node-side RS256 signing, which k6
+// cannot run (it uses k6's WebCrypto).
+import { buildSidebandEnvelope, buildClaims } from "../helm/loadtest/files/envelope.mjs";
 
 const base = {
   sidebandUrl: process.env.PAZ_SIDEBAND_URL,
