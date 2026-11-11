@@ -7,10 +7,9 @@
 # agentgateway-stack values file). 2607 is the tag the operator's working PAZ
 # deployments run.
 #
-# Credentials come from the terminal session's environment
-# (PING_IDENTITY_DEVOPS_USER/KEY and PAP_ADMIN_PASSWORD), never from files in
-# this repository. deploy.sh reads them from the session and injects them via
-# --set-string; nothing is rendered into committed values or templates.
+# Licensing: the chart reads the cluster Secret 'devops-secret', created once
+# via pingctl from the session environment — no credential is rendered into
+# this chart or stored in this repository.
 #
 # Deploy order (scripts/deploy.sh): PAP first (pingauthorize.enabled stays
 # false), then the deployment package is built against PAP's API and pushed
@@ -25,7 +24,7 @@ ping-devops:
       tag: "2607"
     license:
       secret:
-        devOps: paz-devops-secret
+        devOps: devops-secret   # Ping's standard name; created once via pingctl from the session env
     privateCert:
       generate: true     # in-cluster listener TLS via the chart's private cert; no cert-manager here
     ingress:

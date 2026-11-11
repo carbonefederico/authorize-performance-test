@@ -28,11 +28,9 @@ if [[ -z "${pods}" ]]; then
   exit 0
 fi
 
-# The admin bind password: PAP's admin password also authenticates
-# cn=Directory Manager on PAZ in this deployment (the chart's shared
-# master-password default). Read from the chart Secret, fall back to .env.
-admin_pw="$(kubectl -n "${NAMESPACE}" get secret paz-secrets \
-  -o jsonpath='{.data.pap-admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "${PAP_ADMIN_PASSWORD:-}")"
+# The admin bind password: the lab constant the images boot with (.env's
+# PAP_ADMIN_PASSWORD, the DevOps default).
+admin_pw="${PAP_ADMIN_PASSWORD:-}"
 
 status="ok"
 for pod in ${pods}; do

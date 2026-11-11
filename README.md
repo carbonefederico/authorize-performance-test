@@ -124,16 +124,21 @@ by hand inside the cluster. The namespace defaults to `paz-perf`.
    remaining values as documented there.
 2. Generate the key material: `./scripts/generate-signing-key.sh` (idempotent;
    `--force` regenerates).
-3. Create the profile repository once (this is the one manual, outward-facing
-   step — the Ping images clone their profile from it at boot):
-   `gh repo create carbonefederico/paz-sideband-perf-profiles --public`, then
-   `git clone https://github.com/carbonefederico/paz-sideband-perf-profiles.git ~/.paz-perf-profile-repo`.
+3. Create the license secret once, from your terminal session (Ping's
+   standard mechanism — the credentials never enter this repository):
+   `pingctl k8s generate devops-secret | kubectl -n paz-perf apply -f -`.
+
+The profile repository IS this repository: the Ping products clone
+`server-profiles/` from this project's GitHub remote at boot, so the repo
+must be pushed to GitHub before the first deploy. PAP's admin password is
+the lab constant in `.env` (`PAP_ADMIN_PASSWORD`, the DevOps default the
+images boot with); scripts use it to authenticate against PAP client-side.
 
 ### Step 1 — deploy (~15 minutes, phased)
 
 ```bash
 ./scripts/deploy.sh headroom   # per-node capacity picture before anything installs
-./scripts/deploy.sh prep       # PAP first (PAZ disabled), waits for PAP Ready
+./scripts/deploy.sh prep       # secrets + PAP first (PAZ disabled), waits for PAP Ready
 ./scripts/deploy.sh package    # build the .deploymentpackage from PAP's API
 ./scripts/deploy.sh runtime    # push profile (now with package), enable PAZ, wait Ready
 ./scripts/verify.sh            # 2 PAZ pods, 1 PAP pod, Service on 8443
