@@ -120,12 +120,11 @@ by hand inside the cluster. The namespace defaults to `paz-perf`.
 
 ### Step 0 — one-time setup
 
-1. Fill in your Ping DevOps credentials. Every script auto-creates `.env`
-   from the committed defaults on first use, so the only manual act is
-   opening the created `.env` and completing its two credential lines
-   (`PING_IDENTITY_DEVOPS_USER` / `PING_IDENTITY_DEVOPS_KEY`); everything
-   else ships with working lab defaults. The file is git-ignored and
-   `chmod 600`.
+1. Provision the chart's licensing secret the way your environment
+   standardly does (the chart secretRefs `devops-secret`; this project's
+   scripts never touch credentials). Every script auto-creates `.env` from
+   the committed defaults on first use; all its values ship with working
+   lab defaults.
 2. Push this repository to GitHub (the Ping products clone their profile
    from it at boot): `gh repo create carbonefederico/authorize-performance-test
    --public --source . --push`.

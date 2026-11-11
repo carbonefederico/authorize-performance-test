@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# create-secrets.sh — idempotent cluster Secrets for the campaign, all of it
-# derived from .env: nothing to run by hand.
-#   devops-secret       Ping DevOps eval credentials (from .env), the keys
-#                       the image envsubts (PING_IDENTITY_DEVOPS_USER/KEY)
+# create-secrets.sh — idempotent cluster Secrets owned by this project.
 #   paz-secrets         sideband shared secret (generated + written back to
 #                       .env when empty, so k6 and PAZ share one value across
 #                       redeploys)
 #   paz-loadtest        every env key the k6 script reads (overridden per
 #                       profile by run-in-cluster.sh --set-string)
+# The chart's devops-secret (Ping DevOps licensing) is the operator's to
+# provision — this script deliberately does not touch credentials.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_command kubectl
 require_command openssl
-check_devops_credentials
 for name in SUBJECT_SIGNING_KEY_FILE MCP_AUD PAZ_SIDEBAND_URL SUBJECT_ISSUER; do
   require_value "${name}"
 done
@@ -21,12 +19,6 @@ done
   echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (it is git-ignored and lives in keys/)" >&2
   exit 1
 }
-
-kubectl -n "${NAMESPACE}" create secret generic devops-secret \
-  --from-literal=PING_IDENTITY_DEVOPS_USER="${PING_IDENTITY_DEVOPS_USER}" \
-  --from-literal=PING_IDENTITY_DEVOPS_KEY="${PING_IDENTITY_DEVOPS_KEY}" \
-  --from-literal=PING_IDENTITY_ACCEPT_EULA="${PING_IDENTITY_ACCEPT_EULA:-YES}" \
-  --dry-run=client -o yaml | kubectl apply -f -
 
 # Generate the sideband shared secret once and persist it to .env so every
 # later script (and redeploy) uses the same value.
@@ -63,4 +55,4 @@ kubectl -n "${NAMESPACE}" create secret generic paz-loadtest \
   --from-literal=INSECURE_SKIP_TLS_VERIFY="${INSECURE_SKIP_TLS_VERIFY:-true}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "Secrets ready in namespace ${NAMESPACE}: devops-secret, paz-secrets, paz-loadtest"
+echo "Secrets ready in namespace ${NAMESPACE}: paz-secrets, paz-loadtest"

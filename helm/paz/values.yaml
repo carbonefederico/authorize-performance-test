@@ -7,8 +7,10 @@
 # agentgateway-stack values file). 2607 is the tag the operator's working PAZ
 # deployments run.
 #
-# Licensing: the chart secretRefs the cluster Secret 'devops-secret' into the
-# Ping pods; create-secrets.sh builds it from .env (nothing to run by hand).
+# Licensing: the chart secretRefs the cluster Secret 'devops-secret' (its own
+# default name) into the Ping pods. Provisioning that secret is the operator's
+# concern (your environment standard) — none of this project's scripts touch
+# credentials.
 #
 # Deploy order (scripts/deploy.sh): PAP first (pingauthorize.enabled stays
 # false), then the deployment package is built against PAP's API and pushed
@@ -21,9 +23,6 @@ ping-devops:
       PING_IDENTITY_ACCEPT_EULA: "YES"
     image:
       tag: "2607"
-    license:
-      secret:
-        devOps: devops-secret   # Ping's standard name; created once via pingctl from the session env
     privateCert:
       generate: true     # in-cluster listener TLS via the chart's private cert; no cert-manager here
     ingress:

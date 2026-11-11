@@ -23,17 +23,6 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
-# A missing DevOps credential is THE one thing scripts cannot default; point
-# straight at the two lines to fill.
-check_devops_credentials() {
-  if [[ -z "${PING_IDENTITY_DEVOPS_USER:-}" || -z "${PING_IDENTITY_DEVOPS_KEY:-}" ]]; then
-    echo "Fill in your Ping DevOps credentials in .env (two lines at the top):" >&2
-    echo "  PING_IDENTITY_DEVOPS_USER=..." >&2
-    echo "  PING_IDENTITY_DEVOPS_KEY=..." >&2
-    echo "Get them from the Ping DevOps portal (eval license)." >&2
-    exit 1
-  fi
-}
 
 # Optional load profile: PROFILE=stage-100 loads profiles/stage-100.env on
 # top of .env. Values in the profile win, so a profile fully describes its run.
