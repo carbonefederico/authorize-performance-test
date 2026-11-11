@@ -18,7 +18,7 @@ for name in PING_IDENTITY_DEVOPS_USER PING_IDENTITY_DEVOPS_KEY \
   require_value "${name}"
 done
 [[ -f "${SUBJECT_SIGNING_KEY_FILE}" ]] || {
-  echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (run ./scripts/generate-signing-key.sh)" >&2
+  echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (it is git-ignored and lives in keys/)" >&2
   exit 1
 }
 

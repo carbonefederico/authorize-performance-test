@@ -10,7 +10,7 @@ for name in SIDEBAND_SHARED_SECRET MCP_AUD SUBJECT_ISSUER SUBJECT_SIGNING_KEY_FI
   require_value "${name}"
 done
 [[ -f "${SUBJECT_SIGNING_KEY_FILE}" ]] || {
-  echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (run ./scripts/generate-signing-key.sh)" >&2
+  echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (it is git-ignored and lives in keys/)" >&2
   exit 1
 }
 

@@ -99,10 +99,10 @@ server-profiles/     The PAZ dsconfig layer (trusted-certificate validator,
                      verifications to fill in on first deploy.
 profiles/            Load profiles: stage-100/250/500.env (the campaign ladder)
                      and agents.env. Each fully describes its run.
-scripts/             One script per step: generate-signing-key, create-secrets,
-                     deploy (phases: headroom/prep/package/runtime), verify,
-                     build-package, smoke, run-in-cluster, monitor,
-                     scrape-monitor, generate-report.py, validate, uninstall.
+scripts/             One script per step: create-secrets, deploy (phases:
+                     headroom/prep/package/runtime), verify, build-package,
+                     smoke, run-in-cluster, monitor, scrape-monitor,
+                     generate-report.py, validate, uninstall.
 keys/                Subject signing key (git-ignored). The matching public
                      certificate is committed in the PAZ profile.
 results/             Per-run working artifacts, one directory per run (lab-
@@ -122,9 +122,7 @@ by hand inside the cluster. The namespace defaults to `paz-perf`.
 
 1. Fill in `.env` (`cp .env.example .env`): Ping DevOps credentials, and the
    remaining values as documented there.
-2. Generate the key material: `./scripts/generate-signing-key.sh` (idempotent;
-   `--force` regenerates).
-3. Push this repository to GitHub (the Ping products clone their profile
+2. Push this repository to GitHub (the Ping products clone their profile
    from it at boot): `gh repo create carbonefederico/authorize-performance-test
    --public --source . --push`.
 
@@ -254,10 +252,11 @@ PF project's README.)*
   settings only, never secrets. `keys/` holds the subject signing key and is
   also excluded. The sideband shared secret is generated once and persisted
   to `.env` so PAZ and k6 always share one value.
-- The subject signing key must stay stable across a campaign: every token's
-  signature must verify against the certificate in the deployed profile.
-  Regenerate only with `./scripts/generate-signing-key.sh --force`, then
-  commit the new certificate and redeploy PAZ (the runtime phase pushes it).
+- The subject signing key is a fixed demo artifact: one 10-year self-signed
+  keypair, the key git-ignored in `keys/` and the certificate committed in
+  the PAZ profile. Every token's signature verifies against that
+  certificate. If you ever replace the pair, commit the new certificate and
+  redeploy PAZ (the runtime phase pushes it).
 - `INSECURE_SKIP_TLS_VERIFY=true` is suitable for the chart's internal
   self-signed TLS during a lab test. Install trusted certificates and set it
   to `false` for a production-like test.
