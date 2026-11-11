@@ -1,9 +1,10 @@
 # Server profiles — PAZ sideband performance stack
 
 The server profiles configure both Ping products at boot. The Ping images
-clone this directory (served at the root of the profile repository) via
-`SERVER_PROFILE_URL` and apply it on every start; nothing is configured by
-hand. The stack runs PAZ in **embedded PDP mode from a deployment package
+clone this project's GitHub repository (the `SERVER_PROFILE_URL` in `.env`)
+and apply `server-profiles/` on every start; nothing is configured by hand.
+This profile tree is part of the project repository — there is no separate
+profile repo. The stack runs PAZ in **embedded PDP mode from a deployment package
 file** — PAP exists only to build that package once and is off the decision
 path.
 
@@ -42,7 +43,7 @@ data comes from the deployment package built on top of that commit.
    PAP's hook imports and commits `AgentGatewayPortfolioMCP` at boot.
 2. `./scripts/build-package.sh` builds the deployment package from PAP's API
    and writes it into `pingauthorize/instance/server/default/data/`.
-3. Sync + commit + push this profile tree to the profile repository.
+3. Commit and push this repository (the runtime phase of deploy.sh does it) so the package and certificate are in the clone the PAZ pods fetch.
 4. Enable PAZ (`helm upgrade`): it boots with the package file already in its
    profile and the embedded PDP loads it in-process. PAP stays deployed but
    idle; no decision ever touches it.

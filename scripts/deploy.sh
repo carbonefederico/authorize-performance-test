@@ -2,9 +2,18 @@
 # deploy.sh — phased deployment of the PAZ sideband performance stack.
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
-#   ./scripts/deploy.sh prep       create secrets, sync profile repo, install chart (PAP only, PAZ disabled)
+#   ./scripts/deploy.sh prep       create secrets + install chart (PAP only, PAZ disabled)
 #   ./scripts/deploy.sh package    wait for PAP, build the deployment package from its API
-#   ./scripts/deploy.sh runtime    push profile (now with package+cert) + enable PAZ, wait Ready
+#   ./scripts/deploy.sh runtime    commit+push the profile (now with package+cert),
+#                                  then enable PAZ and wait Ready
+#
+# The profile lives in this repository under server-profiles/; the Ping
+# products clone it from this repo (the GitHub remote) at boot. The package
+# and runtime phases therefore push before PAZ boots — a commit-and-push to
+# this repository's remote, which the user has approved.
+#
+# Credentials come from the calling terminal session's environment
+# (PING_IDENTITY_DEVOPS_USER/KEY, PAP_ADMIN_PASSWORD) — never from files here.
 #
 # Phases are idempotent: helm install skips an existing release; upgrades
 # re-run. Run in order for a first deploy; re-run any phase after changes.
@@ -21,13 +30,20 @@ phase="${1:-}"
 }
 
 chart_args=(
-  --set-string sidebandSharedSecret="${SIDEBAND_SHARED_SECRET:-}"
-  --set-string papAdminPassword="${PAP_ADMIN_PASSWORD:-}"
-  --set-string devopsUser="${PING_IDENTITY_DEVOPS_USER:-}"
-  --set-string devopsKey="${PING_IDENTITY_DEVOPS_KEY:-}"
   --set-string "ping-devops.pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
   --set-string "ping-devops.pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
 )
+
+push_profile() {
+  require_command git
+  [[ -n "$(git -C "${ROOT_DIR}" status --porcelain -- server-profiles/)" ]] || {
+    echo "server-profiles/ already committed; nothing to push."
+    return 0
+  }
+  git -C "${ROOT_DIR}" add server-profiles/
+  git -C "${ROOT_DIR}" commit -m "server-profiles: package + certificate for PAZ bootstrap"
+  git -C "${ROOT_DIR}" push origin HEAD
+}
 
 case "${phase}" in
   headroom)
@@ -38,7 +54,6 @@ case "${phase}" in
 
   prep)
     "${ROOT_DIR}/scripts/create-secrets.sh"
-    "${ROOT_DIR}/scripts/sync-profile-repo.sh"
     if helm -n "${NAMESPACE}" status "${PAZ_RELEASE}" > /dev/null 2>&1; then
       echo "Release ${PAZ_RELEASE} already exists; upgrading with PAZ disabled."
       helm -n "${NAMESPACE}" upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
@@ -54,11 +69,11 @@ case "${phase}" in
 
   package)
     "${ROOT_DIR}/scripts/build-package.sh"
-    echo "package: built. Next: ./scripts/sync-profile-repo.sh runs inside the runtime phase."
+    echo "package: built and staged in server-profiles/. The runtime phase commits and pushes it."
     ;;
 
   runtime)
-    "${ROOT_DIR}/scripts/sync-profile-repo.sh"
+    push_profile
     helm -n "${NAMESPACE}" upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
       --set ping-devops.pingauthorize.enabled=true
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \

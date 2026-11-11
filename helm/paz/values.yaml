@@ -7,10 +7,15 @@
 # agentgateway-stack values file). 2607 is the tag the operator's working PAZ
 # deployments run.
 #
+# Credentials come from the terminal session's environment
+# (PING_IDENTITY_DEVOPS_USER/KEY and PAP_ADMIN_PASSWORD), never from files in
+# this repository. deploy.sh reads them from the session and injects them via
+# --set-string; nothing is rendered into committed values or templates.
+#
 # Deploy order (scripts/deploy.sh): PAP first (pingauthorize.enabled stays
 # false), then the deployment package is built against PAP's API and pushed
-# to the profile repo, then PAZ is enabled — it boots with the package file
-# already in its server profile.
+# to the profile repository, then PAZ is enabled — it boots with the package
+# file already in its server profile.
 
 ping-devops:
   global:
@@ -30,7 +35,7 @@ ping-devops:
     enabled: false       # deploy.sh flips this to true after the package lands
     envs:
       SERVER_PROFILE_URL: ""    # injected via --set-string from scripts/deploy.sh
-      SERVER_PROFILE_PATH: "pingauthorize"
+      SERVER_PROFILE_PATH: "server-profiles/pingauthorize"
     workload:
       type: StatefulSet
       statefulSet:
@@ -66,7 +71,7 @@ ping-devops:
     enabled: true
     envs:
       SERVER_PROFILE_URL: ""
-      SERVER_PROFILE_PATH: "pingauthorizepap"
+      SERVER_PROFILE_PATH: "server-profiles/pingauthorizepap"
     workload:
       type: StatefulSet
       statefulSet:

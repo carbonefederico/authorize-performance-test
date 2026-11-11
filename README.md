@@ -32,7 +32,7 @@ flowchart LR
 
     k6 -- "POST /sideband/request<br/>PDG-TOKEN + Bearer<br/>(fresh self-signed RS256 per iteration)" --> svc
     svc --> paz
-    pap -. "one-time: build-package.sh via PAP API<br/>→ .deploymentpackage committed to profile repo" .-> paz
+    pap -. "one-time: build-package.sh via PAP API<br/>→ .deploymentpackage committed to this repo" .-> paz
 ```
 
 What is deliberately absent: no JWKS server, no API gateway, no adapter, no
@@ -100,10 +100,9 @@ server-profiles/     The PAZ dsconfig layer (trusted-certificate validator,
 profiles/            Load profiles: stage-100/250/500.env (the campaign ladder)
                      and agents.env. Each fully describes its run.
 scripts/             One script per step: generate-signing-key, create-secrets,
-                     sync-profile-repo, deploy (phases: headroom/prep/package/
-                     runtime), verify, build-package, smoke, run-in-cluster,
-                     monitor, scrape-monitor, generate-report.py, validate,
-                     uninstall.
+                     deploy (phases: headroom/prep/package/runtime), verify,
+                     build-package, smoke, run-in-cluster, monitor,
+                     scrape-monitor, generate-report.py, validate, uninstall.
 keys/                Subject signing key (git-ignored). The matching public
                      certificate is committed in the PAZ profile.
 results/             Per-run working artifacts, one directory per run (lab-
@@ -253,12 +252,13 @@ PF project's README.)*
 - The subject signing key must stay stable across a campaign: every token's
   signature must verify against the certificate in the deployed profile.
   Regenerate only with `./scripts/generate-signing-key.sh --force`, then
-  re-sync the profile repo and redeploy PAZ.
+  commit the new certificate and redeploy PAZ (the runtime phase pushes it).
 - `INSECURE_SKIP_TLS_VERIFY=true` is suitable for the chart's internal
   self-signed TLS during a lab test. Install trusted certificates and set it
   to `false` for a production-like test.
 - PAZ runs with ephemeral storage (no PVC) and rebuilds from the profile on
-  every start; policy data persists in the profile repository and PAP.
+  every start; policy data persists in this repository (server-profiles/)
+  and in PAP.
 
 ## Cleanup
 
