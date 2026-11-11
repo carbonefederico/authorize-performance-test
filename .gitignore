@@ -4,3 +4,4 @@ results/
 node_modules/
 .DS_Store
 .superpowers/
+.worktrees/
