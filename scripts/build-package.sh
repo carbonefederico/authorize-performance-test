@@ -1,22 +1,33 @@
 #!/usr/bin/env bash
-# build-package.sh — one-time deployment-package build from PAP's API.
+# build-package.sh — publish a deployment package: build from PAP's API,
+# upload to the S3 package store.
 #
-# The stack's PAZ nodes run in embedded PDP mode from a .deploymentpackage
-# file; this script produces that file from PAP, which holds the committed
-# AgentGatewayPortfolioMCP branch (imported by its bootstrap hook at boot).
-# Re-runnable: each run creates a fresh package (timestamped name, dodging
-# PAP's duplicate-name errors) and overwrites the target file.
+# This is the API equivalent of the Policy Editor's publish-to-store action:
+# the PAZ nodes run in embedded PDP mode polling an S3 deployment package
+# store (created in AWS by scripts/setup-aws.sh, wired in PAZ by the server
+# profile's dsconfig layer). PAP holds the committed AgentGatewayPortfolioMCP
+# branch (imported by its bootstrap hook at boot). Re-runnable: each run
+# creates a fresh package (timestamped name, dodging PAP's duplicate-name
+# errors) and uploads it under the bucket prefix; the PAZ nodes pick it up by
+# polling within poll-interval — no restart.
 #
 # Sequence: find the branch head snapshot -> export it -> create a package
-# rooted at the Global Decision Point -> download the package bytes.
-# Requires PAP reachable at https://localhost:${PAP_PORT_FORWARD} (open the
-# port-forward first: kubectl -n $NAMESPACE port-forward svc/paz-pingauthorizepap 18443:8443).
+# rooted at the Global Decision Point -> download the bytes -> upload to
+# s3://<bucket>/<prefix>/. Requires PAP reachable at
+# https://localhost:${PAP_PORT_FORWARD} (port-forward first) and AWS
+# credentials resolvable in the session (aws login).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_command curl
 require_command python3
+require_command aws
 require_value PAP_ADMIN_PASSWORD
+require_value PAZ_S3_BUCKET
+require_value PAZ_S3_PREFIX
+require_value PAZ_S3_REGION
+require_value PAZ_S3_ACCESS_KEY
+require_value PAZ_S3_SECRET_KEY
 
 PAP_URL="https://localhost:${PAP_PORT_FORWARD:-18443}"
 AUTH="administrator:${PAP_ADMIN_PASSWORD}"
@@ -25,7 +36,7 @@ BRANCH_NAME="AgentGatewayPortfolioMCP"
 # root. Verified present in the snapshot (server-profiles/README.md); if the
 # snapshot is ever regenerated with a re-created GDP, update this value.
 DECISION_NODE_ID="a7c4e2d0-8f11-4b5a-9c3d-6e8f2a1b4c7d"
-TARGET="${ROOT_DIR}/server-profiles/pingauthorize/instance/server/default/data/agentgateway-portfolio-mcp.deploymentpackage"
+TARGET="${ROOT_DIR}/results/agentgateway-portfolio-mcp.deploymentpackage"
 
 auth_headers=(-u "${AUTH}" -H "x-user-id: administrator" -H "X-XSRF-HEADER: ping" -k)
 
@@ -101,4 +112,16 @@ curl -sk "${auth_headers[@]}" -o "${TARGET}" \
   "${PAP_URL}/api/deployment-packages/${pkg_id}/data" \
   || fail "Package download failed for ${pkg_id}" "curl failed"
 [[ -s "${TARGET}" ]] || fail "Downloaded package is empty" "${TARGET}"
-echo "Wrote ${TARGET} ($(wc -c < "${TARGET}" | tr -d ' ') bytes)"
+echo "Downloaded ${TARGET} ($(wc -c < "${TARGET}" | tr -d ' ') bytes)"
+
+# --- 5. publish to the S3 package store --------------------------------------
+# A timestamped object name keeps every publish distinct; bucket versioning
+# (enabled by setup-aws.sh) preserves the history for rollback.
+S3_URI="s3://${PAZ_S3_BUCKET}/${PAZ_S3_PREFIX}/${pkg_name}.deploymentpackage"
+AWS_ACCESS_KEY_ID="${PAZ_S3_ACCESS_KEY}" \
+AWS_SECRET_ACCESS_KEY="${PAZ_S3_SECRET_KEY}" \
+AWS_DEFAULT_REGION="${PAZ_S3_REGION}" \
+  aws s3 cp "${TARGET}" "${S3_URI}" \
+  || fail "S3 upload failed to ${S3_URI}" "aws s3 cp"
+echo "Published ${S3_URI}"
+echo "PAZ nodes pick it up by polling (poll-interval 30s) — no restart."

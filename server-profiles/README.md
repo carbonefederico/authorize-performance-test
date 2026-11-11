@@ -4,9 +4,10 @@ The server profiles configure both Ping products at boot. The Ping images
 clone this project's GitHub repository (the `SERVER_PROFILE_URL` in `.env`)
 and apply `server-profiles/` on every start; nothing is configured by hand.
 This profile tree is part of the project repository — there is no separate
-profile repo. The stack runs PAZ in **embedded PDP mode from a deployment package
-file** — PAP exists only to build that package once and is off the decision
-path.
+profile repo. The stack runs PAZ in **embedded PDP mode fed by an S3
+deployment package store** — the production consumption model: PAP authors
+the policy, `build-package.sh` publishes the package to S3, and the PAZ nodes
+poll and load it without a restart. PAP is off the decision path.
 
 ## Tree
 
@@ -14,12 +15,11 @@ path.
 pingauthorize/            PAZ (the measured node, 2 replicas)
 ├── pd.profile/dsconfig/
 │   ├── 20-token-validator.dsconfig.subst   local trusted-certificate JWT validator (PerfSubjectJWT)
-│   ├── 30-embedded-pdp.dsconfig.subst      pdp-mode:embedded + the deployment package file
+│   ├── 30-embedded-pdp.dsconfig.subst      pdp-mode:embedded + the S3 deployment package store (poll-interval 30s)
 │   └── 40-sideband.dsconfig.subst          sideband shared secret + endpoint (AgentGateway service, /mcp)
 ├── hooks/                                  (none — the chart's stock hooks apply the pd.profile layer)
 └── instance/server/default/data/
-    ├── perf-subject-cert.pem               self-signed public certificate matching the k6 signing key
-    └── agentgateway-portfolio-mcp.deploymentpackage   the policy package (built once from PAP)
+    └── perf-subject-cert.pem               self-signed public certificate matching the k6 signing key
 
 pingauthorizepap/         PAP (package authoring only; idle during load runs)
 ├── policies/
@@ -35,38 +35,48 @@ same policy ladder the gateway integration uses. The two contracts that cost
 the sibling debugging time, both preserved here: importing a snapshot always
 creates a NEW branch named in the URL (a taken name 409s), and the PDP serves
 only COMMITTED snapshots — the hook commits after import, and PAZ's policy
-data comes from the deployment package built on top of that commit.
+data comes from the deployment package published on top of that commit.
 
 ## Deploy order (scripts/deploy.sh drives this)
 
-1. PAP + JWKS-free runtime deps first: `helm install` with PAZ disabled.
-   PAP's hook imports and commits `AgentGatewayPortfolioMCP` at boot.
+0. `./scripts/setup-aws.sh` (once, logged into AWS): creates the versioned,
+   private S3 bucket, a least-privilege IAM user, and writes the credentials
+   into `.env`. This is the artifact plane — policy packages live in the
+   bucket, not in git.
+1. PAP first: `helm install` with PAZ disabled. PAP's hook imports and
+   commits `AgentGatewayPortfolioMCP` at boot.
 2. `./scripts/build-package.sh` builds the deployment package from PAP's API
-   and writes it into `pingauthorize/instance/server/default/data/`.
-3. Commit and push this repository (the runtime phase of deploy.sh does it) so the package and certificate are in the clone the PAZ pods fetch.
-4. Enable PAZ (`helm upgrade`): it boots with the package file already in its
-   profile and the embedded PDP loads it in-process. PAP stays deployed but
-   idle; no decision ever touches it.
+   (export committed head → create package rooted at the Global Decision
+   Point → download bytes) and uploads it to
+   `s3://<bucket>/<prefix>/` — the API equivalent of the Policy Editor's
+   publish-to-store action.
+3. Enable PAZ (`helm upgrade`): it boots in embedded-PDP mode, creates the
+   S3 store definition from this layer, and polls the bucket (30 s
+   interval). A later `build-package.sh` run is picked up by polling — no
+   restart. PAP stays deployed but idle; no decision ever touches it.
 
 ## Version-specific verifications (record your findings here)
 
-These three values depend on the pinned image (2607) and the profile overlay
+These values depend on the pinned image (2607) and the profile overlay
 layout. Verify each on first deploy and write what you found under its
 heading; adjust the dsconfig files if reality differs.
 
 ### In-container server root for profile data files
 
-`${PAZ_CERT_PATH}` (20-token-validator) and `${PAZ_PACKAGE_PATH}`
-(30-embedded-pdp) must be the absolute in-container paths of
-`instance/server/default/data/*`. Verify on the running PAZ with
-`kubectl exec <pod> -- find / -name perf-subject-cert.pem 2>/dev/null`.
-Finding (fill in on first deploy):
+`${PAZ_CERT_PATH}` (20-token-validator) must be the absolute in-container
+path of `instance/server/default/data/perf-subject-cert.pem`. Verify on the
+running PAZ with `kubectl exec <pod> -- find / -name perf-subject-cert.pem
+2>/dev/null`. Finding (fill in on first deploy):
 
-### Deployment-package property spelling
+### Deployment package store property spellings
 
-`dsconfig set-policy-decision-service-prop --help` on the running PAZ —
-documentation shows `deployment-package` and `deployment-package-path` across
-versions; this profile uses `deployment-package`. Finding (fill in on first
+`dsconfig create-deployment-package-store --help` and
+`dsconfig set-policy-decision-service-prop --help` on the running PAZ — this
+profile uses `--type s3` with `poll-interval`, `s3-bucket-name`,
+`s3-bucket-prefix`, `s3-region-name`, `s3-access-key-id`, `s3-secret-key`,
+and the PDS properties `deployment-package-source-type:store` +
+`deployment-package-store:<name>`. Documentation shows property-name drift
+across versions; confirm against the image. Finding (fill in on first
 deploy):
 
 ### Monitor providers

@@ -1,21 +1,36 @@
-# 30-embedded-pdp.dsconfig.subst — embedded PDP mode from a deployment
-# package file. This is the whole point of this stack: the policy state is
-# loaded INTO the PAZ process (no PAP round trip per decision, no external
-# policy server, no store polling). The package is built once from PAP by
-# scripts/build-package.sh and ships in this profile at
-# instance/server/default/data/agentgateway-portfolio-mcp.deploymentpackage.
+# 30-embedded-pdp.dsconfig.subst — embedded PDP mode fed by an S3 deployment
+# package store. This is the production integration model: policies are
+# authored in PAP, exported as an immutable versioned package, published to
+# an S3 bucket, and the PAZ nodes poll and load it — no restart, PAP off the
+# decision path.
 #
-# ${PAZ_PACKAGE_PATH} is the in-container absolute path of that file.
+# The store is created here (PAZ-side); publishing is done by
+# scripts/build-package.sh, which uploads the package to the bucket — the
+# API equivalent of the Policy Editor's publish-to-store action.
 #
-# Property spelling: documentation shows both deployment-package and
-# deployment-package-path across PingAuthorize versions. Verify against this
-# image (dsconfig set-policy-decision-service-prop --help) on first deploy
-# and record the winner in ../../README.md; adjust here if it differs.
+# Environment variables (injected from K8s Secrets via the chart values):
+#   PAZ_S3_BUCKET / PAZ_S3_PREFIX / PAZ_S3_REGION / PAZ_S3_ACCESS_KEY /
+#   PAZ_S3_SECRET_KEY — the store's target and the static credentials
+#   (an IAM user scoped to the bucket; on EKS with IRSA these could be
+#   omitted so the SDK default chain applies — see README).
 #
-# trust-framework-version matches the sibling's pin (v2); keep unless the
-# image rejects it.
+# Poll interval: non-zero on purpose. A production store deployment picks up
+# published packages without a restart; 0 would mean load-on-start only,
+# which is the behavior this stack is meant to move away from. The poller is
+# part of the measured system (a periodic background scan, as in prod).
+
+dsconfig create-deployment-package-store \
+    --store-name paz-perf-packages \
+    --type s3 \
+    --set poll-interval:30 \
+    --set "s3-bucket-name:${PAZ_S3_BUCKET}" \
+    --set "s3-bucket-prefix:${PAZ_S3_PREFIX}" \
+    --set "s3-region-name:${PAZ_S3_REGION}" \
+    --set "s3-access-key-id:${PAZ_S3_ACCESS_KEY}" \
+    --set "s3-secret-key:${PAZ_S3_SECRET_KEY}"
 
 dsconfig set-policy-decision-service-prop \
     --set pdp-mode:embedded \
-    --set deployment-package:${PAZ_PACKAGE_PATH} \
+    --set deployment-package-source-type:store \
+    --set deployment-package-store:paz-perf-packages \
     --set trust-framework-version:v2

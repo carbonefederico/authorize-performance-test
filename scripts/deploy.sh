@@ -3,20 +3,21 @@
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
 #   ./scripts/deploy.sh prep       create secrets + install chart (PAP only, PAZ disabled)
-#   ./scripts/deploy.sh package    wait for PAP, build the deployment package from its API
-#   ./scripts/deploy.sh runtime    commit+push the profile (now with package+cert),
-#                                  then enable PAZ and wait Ready
+#   ./scripts/deploy.sh package    wait for PAP, publish the deployment package to S3
+#   ./scripts/deploy.sh runtime    enable PAZ (embedded PDP polling the S3 store), wait Ready
 #
-# The profile lives in this repository under server-profiles/; the Ping
-# products clone it from this repo (the GitHub remote) at boot. The package
-# and runtime phases therefore push before PAZ boots — a commit-and-push to
-# this repository's remote, which the user has approved.
+# The profile lives in this repository under server-profiles/ and configures
+# the SERVERS (dsconfig layer, certificate, S3 store definition); the POLICY
+# travels through the S3 package store (setup-aws.sh creates it,
+# build-package.sh publishes to it, PAZ polls it — no restart on policy
+# change). Policy publication and server deployment are therefore separate
+# concerns, exactly as in a production store deployment.
 #
 # Licensing: the chart secretRefs the cluster Secret 'devops-secret', which
-# create-secrets.sh builds from .env — the whole deploy needs no manual step.
-# PAP's admin password is the lab constant in .env (the DevOps default the
-# images boot with), used by build-package.sh and scrape-monitor.sh client-side.
-# Only the profile URLs are injected here.
+# the operator provisions by their environment standard. PAP's admin password
+# is the lab constant in .env (the DevOps default the images boot with), used
+# by build-package.sh and scrape-monitor.sh client-side. Only the profile
+# URLs are injected here.
 #
 # Phases are idempotent: helm install skips an existing release; upgrades
 # re-run. Run in order for a first deploy; re-run any phase after changes.
@@ -36,17 +37,6 @@ chart_args=(
   --set-string "ping-devops.pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
   --set-string "ping-devops.pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
 )
-
-push_profile() {
-  require_command git
-  [[ -n "$(git -C "${ROOT_DIR}" status --porcelain -- server-profiles/)" ]] || {
-    echo "server-profiles/ already committed; nothing to push."
-    return 0
-  }
-  git -C "${ROOT_DIR}" add server-profiles/
-  git -C "${ROOT_DIR}" commit -m "server-profiles: package + certificate for PAZ bootstrap"
-  git -C "${ROOT_DIR}" push origin HEAD
-}
 
 case "${phase}" in
   headroom)
@@ -72,17 +62,17 @@ case "${phase}" in
 
   package)
     "${ROOT_DIR}/scripts/build-package.sh"
-    echo "package: built and staged in server-profiles/. The runtime phase commits and pushes it."
+    echo "package: published to s3://${PAZ_S3_BUCKET}/${PAZ_S3_PREFIX}/. Re-run any time —"
+    echo "the PAZ nodes poll and load it without a restart."
     ;;
 
   runtime)
-    push_profile
     helm -n "${NAMESPACE}" upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
       --set ping-devops.pingauthorize.enabled=true
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
     "${ROOT_DIR}/scripts/verify.sh"
-    echo "runtime: both PAZ pods Ready. Run ./scripts/verify.sh and the smoke test."
+    echo "runtime: both PAZ pods Ready. Run ./scripts/smoke.sh next."
     ;;
 
   *)

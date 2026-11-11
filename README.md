@@ -26,20 +26,26 @@ flowchart LR
     subgraph "measured path"
     k6["k6 agents ×10<br/>(plays the gateway / PEP)"]
     svc["PAZ Service<br/>cluster-internal HTTPS"]
-    paz["PAZ ×2 StatefulSet<br/>embedded PDP<br/>policies from .deploymentpackage file"]
+    paz["PAZ ×2 StatefulSet<br/>embedded PDP<br/>policy from S3 package store"]
     end
     pap["PAP ×1<br/>authoring only — idle during runs"]
+    s3["S3 bucket<br/>(versioned package store)"]
 
     k6 -- "POST /sideband/request<br/>PDG-TOKEN + Bearer<br/>(fresh self-signed RS256 per iteration)" --> svc
     svc --> paz
-    pap -. "one-time: build-package.sh via PAP API<br/>→ .deploymentpackage committed to this repo" .-> paz
+    pap -. "build-package.sh via PAP API<br/>→ package published to s3://" .-> s3
+    s3 -. "PAZ polls (30s)<br/>no restart on policy change" .-> paz
 ```
 
 What is deliberately absent: no JWKS server, no API gateway, no adapter, no
-Ingress or cert-manager, no deployment-package store or polling. Token
-validation uses PAZ's local trusted-certificate model — the k6-signed
-tokens' public certificate ships in the PAZ server profile, so no remote
-fetch, cache, or key-rotation behavior exists on the measured path. The
+Ingress or cert-manager. Token validation uses PAZ's local
+trusted-certificate model — the k6-signed tokens' public certificate ships
+in the PAZ server profile, so no remote fetch, cache, or key-rotation
+behavior exists on the measured path. Policy delivery is production-shaped:
+PAP authors the policy, `build-package.sh` publishes the immutable package
+to a private, versioned S3 bucket (the artifact plane Ping's Deployment
+Manager model prescribes), and the PAZ nodes poll and load it without a
+restart — the same machinery an S3-backed production deployment runs. The
 policies are the sibling project's `AgentGatewayPortfolioMCP` branch,
 packaged as-is, so the measured decisions exercise the real policy ladder
 (audience gate, agent-identity delegation, VIP check, scope check) rather
@@ -99,10 +105,11 @@ server-profiles/     The PAZ dsconfig layer (trusted-certificate validator,
                      verifications to fill in on first deploy.
 profiles/            Load profiles: stage-100/250/500.env (the campaign ladder)
                      and agents.env. Each fully describes its run.
-scripts/             One script per step: create-secrets, deploy (phases:
-                     headroom/prep/package/runtime), verify, build-package,
-                     smoke, run-in-cluster, monitor, scrape-monitor,
-                     generate-report.py, validate, uninstall.
+scripts/             One script per step: setup-aws (one-time S3 entities),
+                     create-secrets, deploy (phases: headroom/prep/package/
+                     runtime), verify, build-package, smoke, run-in-cluster,
+                     monitor, scrape-monitor, generate-report.py, validate,
+                     uninstall.
 keys/                Subject signing key (git-ignored). The matching public
                      certificate is committed in the PAZ profile.
 results/             Per-run working artifacts, one directory per run (lab-
@@ -206,8 +213,10 @@ measures.
    `kid`-based rotation pickup is out of scope (PAZ cannot pick up key
    rotation without an HTTP JWKS source).
 2. **No persistent-store work on the decision path.** PAZ runs standalone
-   with an embedded store and ephemeral data; the measured decisions read
-   policy from the in-process deployment package and touch no user store.
+   with an embedded store and ephemeral data; the measured decisions evaluate
+   the in-process policy package and touch no user store. The S3 package
+   store's poller is active (30 s cadence) exactly as in a production store
+   deployment — a background scan whose cost is part of the measured system.
    Subject identity rotates through 100 synthetic VIP users, and PAZ keeps no
    per-subject state on this path, so 100 hot identities exercise the same
    code paths as a cold population.
@@ -277,3 +286,17 @@ PF project's README.)*
 The namespace is retained so credentials and the signing key survive between
 campaigns; delete it explicitly (`kubectl delete namespace paz-perf`) only
 when nothing in it is needed anymore.
+
+## Design history note
+
+The original design (docs/superpowers/specs/2026-11-10-paz-sideband-perf-design.md)
+shipped the `.deploymentpackage` as a file inside the server profile —
+chosen for determinism in a measurement rig. Before any load ran, the
+decision was revisited: a profile-carried policy artifact means every policy
+change restarts the containers, which is the documented anti-pattern for
+PAZ policy lifecycle (policy changes belong to the Deployment Manager
+package-store flow; profiles are for server configuration). The stack
+therefore consumes policy through a real S3 deployment-package store with a
+non-zero poll interval — the production consumption model — while git
+continues to carry only server configuration. The spec predates this
+decision; this README is authoritative.

@@ -3,10 +3,13 @@
 #   paz-secrets         sideband shared secret (generated + written back to
 #                       .env when empty, so k6 and PAZ share one value across
 #                       redeploys)
+#   paz-s3              S3 package-store target + credentials (from .env,
+#                       written there by setup-aws.sh), env-mounted into the
+#                       PAZ pods for the dsconfig layer's S3 store
 #   paz-loadtest        every env key the k6 script reads (overridden per
 #                       profile by run-in-cluster.sh --set-string)
 # The chart's devops-secret (Ping DevOps licensing) is the operator's to
-# provision — this script deliberately does not touch credentials.
+# provision — this script deliberately does not touch Ping credentials.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -19,6 +22,10 @@ done
   echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (it is git-ignored and lives in keys/)" >&2
   exit 1
 }
+for name in PAZ_S3_BUCKET PAZ_S3_PREFIX PAZ_S3_REGION PAZ_S3_ACCESS_KEY PAZ_S3_SECRET_KEY; do
+  require_value "${name}"
+done
+echo "(S3 store values found — run scripts/setup-aws.sh first if these are empty)"
 
 # Generate the sideband shared secret once and persist it to .env so every
 # later script (and redeploy) uses the same value.
@@ -35,6 +42,14 @@ fi
 
 kubectl -n "${NAMESPACE}" create secret generic paz-secrets \
   --from-literal=sideband-shared-secret="${SIDEBAND_SHARED_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${NAMESPACE}" create secret generic paz-s3 \
+  --from-literal=bucket="${PAZ_S3_BUCKET}" \
+  --from-literal=prefix="${PAZ_S3_PREFIX}" \
+  --from-literal=region="${PAZ_S3_REGION}" \
+  --from-literal=access-key="${PAZ_S3_ACCESS_KEY}" \
+  --from-literal=secret-key="${PAZ_S3_SECRET_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${NAMESPACE}" create secret generic paz-loadtest \
@@ -55,4 +70,4 @@ kubectl -n "${NAMESPACE}" create secret generic paz-loadtest \
   --from-literal=INSECURE_SKIP_TLS_VERIFY="${INSECURE_SKIP_TLS_VERIFY:-true}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "Secrets ready in namespace ${NAMESPACE}: paz-secrets, paz-loadtest"
+echo "Secrets ready in namespace ${NAMESPACE}: paz-secrets, paz-s3, paz-loadtest"
