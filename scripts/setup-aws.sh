@@ -97,8 +97,12 @@ else
 fi
 
 # --- 4. persist the resolved names back to .env for the other scripts --------
+# The script-level defaults (REGION/BUCKET/PREFIX above) are the source of
+# truth: write those values even when the caller's environment never set
+# the PAZ_S3_* names (the fresh-clone case).
+declare -A resolved=( [PAZ_S3_REGION]="${REGION}" [PAZ_S3_BUCKET]="${BUCKET}" [PAZ_S3_PREFIX]="${PREFIX}" )
 for var in PAZ_S3_REGION PAZ_S3_BUCKET PAZ_S3_PREFIX; do
-  value="$(eval "echo \${${var}}")"
+  value="${resolved[${var}]}"
   if grep -q "^${var}=" "${ROOT_DIR}/.env" 2>/dev/null; then
     sed -i '' "s|^${var}=.*|${var}=${value}|" "${ROOT_DIR}/.env"
   else
