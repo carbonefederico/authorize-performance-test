@@ -7,9 +7,8 @@
 # agentgateway-stack values file). 2607 is the tag the operator's working PAZ
 # deployments run.
 #
-# Licensing: the chart reads the cluster Secret 'devops-secret', created once
-# via pingctl from the session environment — no credential is rendered into
-# this chart or stored in this repository.
+# Licensing: the chart secretRefs the cluster Secret 'devops-secret' into the
+# Ping pods; create-secrets.sh builds it from .env (nothing to run by hand).
 #
 # Deploy order (scripts/deploy.sh): PAP first (pingauthorize.enabled stays
 # false), then the deployment package is built against PAP's API and pushed

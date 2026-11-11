@@ -1,38 +1,32 @@
 #!/usr/bin/env bash
-# create-secrets.sh — idempotent cluster Secrets for the campaign.
-#   devops-secret       Ping DevOps eval credentials. Created by Ping's
-#                       standard command from the session environment
-#                       (pingctl), NOT by this script — see step 1 below.
+# create-secrets.sh — idempotent cluster Secrets for the campaign, all of it
+# derived from .env: nothing to run by hand.
+#   devops-secret       Ping DevOps eval credentials (from .env), the keys
+#                       the image envsubts (PING_IDENTITY_DEVOPS_USER/KEY)
 #   paz-secrets         sideband shared secret (generated + written back to
 #                       .env when empty, so k6 and PAZ share one value across
 #                       redeploys)
 #   paz-loadtest        every env key the k6 script reads (overridden per
 #                       profile by run-in-cluster.sh --set-string)
-#
-# Prerequisites:
-#   1. The chart's license secret, one-time, from your terminal session
-#      (Ping's documented mechanism):
-#        pingctl k8s generate devops-secret | kubectl -n paz-perf apply -f -
-#   2. Signing key material: ./scripts/generate-signing-key.sh
-#   3. .env filled in (MCP_AUD, PAZ_SIDEBAND_URL, SUBJECT_ISSUER, ...).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_command kubectl
 require_command openssl
-for name in SUBJECT_SIGNING_KEY_FILE MCP_AUD PAZ_SIDEBAND_URL SUBJECT_ISSUER; do
+for name in PING_IDENTITY_DEVOPS_USER PING_IDENTITY_DEVOPS_KEY \
+            SUBJECT_SIGNING_KEY_FILE MCP_AUD PAZ_SIDEBAND_URL SUBJECT_ISSUER; do
   require_value "${name}"
 done
 [[ -f "${SUBJECT_SIGNING_KEY_FILE}" ]] || {
   echo "Signing key not found: ${SUBJECT_SIGNING_KEY_FILE} (run ./scripts/generate-signing-key.sh)" >&2
   exit 1
 }
-if ! kubectl -n "${NAMESPACE}" get secret devops-secret > /dev/null 2>&1; then
-  echo "Missing cluster Secret 'devops-secret' (the chart's license credentials)." >&2
-  echo "Create it once from your terminal session:" >&2
-  echo "  pingctl k8s generate devops-secret | kubectl -n ${NAMESPACE} apply -f -" >&2
-  exit 1
-fi
+
+kubectl -n "${NAMESPACE}" create secret generic devops-secret \
+  --from-literal=PING_IDENTITY_DEVOPS_USER="${PING_IDENTITY_DEVOPS_USER}" \
+  --from-literal=PING_IDENTITY_DEVOPS_KEY="${PING_IDENTITY_DEVOPS_KEY}" \
+  --from-literal=PING_IDENTITY_ACCEPT_EULA="${PING_IDENTITY_ACCEPT_EULA:-YES}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # Generate the sideband shared secret once and persist it to .env so every
 # later script (and redeploy) uses the same value.
@@ -69,4 +63,4 @@ kubectl -n "${NAMESPACE}" create secret generic paz-loadtest \
   --from-literal=INSECURE_SKIP_TLS_VERIFY="${INSECURE_SKIP_TLS_VERIFY:-true}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "Secrets ready in namespace ${NAMESPACE}: devops-secret (pre-existing), paz-secrets, paz-loadtest"
+echo "Secrets ready in namespace ${NAMESPACE}: devops-secret, paz-secrets, paz-loadtest"

@@ -124,15 +124,15 @@ by hand inside the cluster. The namespace defaults to `paz-perf`.
    remaining values as documented there.
 2. Generate the key material: `./scripts/generate-signing-key.sh` (idempotent;
    `--force` regenerates).
-3. Create the license secret once, from your terminal session (Ping's
-   standard mechanism — the credentials never enter this repository):
-   `pingctl k8s generate devops-secret | kubectl -n paz-perf apply -f -`.
+3. Push this repository to GitHub (the Ping products clone their profile
+   from it at boot): `gh repo create carbonefederico/authorize-performance-test
+   --public --source . --push`.
 
-The profile repository IS this repository: the Ping products clone
-`server-profiles/` from this project's GitHub remote at boot, so the repo
-must be pushed to GitHub before the first deploy. PAP's admin password is
-the lab constant in `.env` (`PAP_ADMIN_PASSWORD`, the DevOps default the
-images boot with); scripts use it to authenticate against PAP client-side.
+The deploy needs nothing else: `create-secrets.sh` (inside `deploy.sh prep`)
+builds the chart's `devops-secret` from `.env`'s DevOps credentials, the
+sideband shared secret, and the k6 secret. PAP's admin password is the lab
+constant in `.env` (`PAP_ADMIN_PASSWORD`, the DevOps default the images boot
+with); scripts use it to authenticate against PAP client-side.
 
 ### Step 1 — deploy (~15 minutes, phased)
 

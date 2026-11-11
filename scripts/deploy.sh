@@ -12,11 +12,11 @@
 # and runtime phases therefore push before PAZ boots — a commit-and-push to
 # this repository's remote, which the user has approved.
 #
-# Licensing credentials never touch this repository: the chart reads the
-# cluster Secret 'devops-secret', created once via pingctl from the session
-# environment. PAP's admin password is the lab constant in .env (the DevOps
-# default the images boot with), used by build-package.sh and scrape-monitor.sh
-# client-side. Only the profile URLs are injected here.
+# Licensing: the chart secretRefs the cluster Secret 'devops-secret', which
+# create-secrets.sh builds from .env — the whole deploy needs no manual step.
+# PAP's admin password is the lab constant in .env (the DevOps default the
+# images boot with), used by build-package.sh and scrape-monitor.sh client-side.
+# Only the profile URLs are injected here.
 #
 # Phases are idempotent: helm install skips an existing release; upgrades
 # re-run. Run in order for a first deploy; re-run any phase after changes.
