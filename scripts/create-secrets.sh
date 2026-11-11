@@ -13,8 +13,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_command kubectl
 require_command openssl
-for name in PING_IDENTITY_DEVOPS_USER PING_IDENTITY_DEVOPS_KEY \
-            SUBJECT_SIGNING_KEY_FILE MCP_AUD PAZ_SIDEBAND_URL SUBJECT_ISSUER; do
+check_devops_credentials
+for name in SUBJECT_SIGNING_KEY_FILE MCP_AUD PAZ_SIDEBAND_URL SUBJECT_ISSUER; do
   require_value "${name}"
 done
 [[ -f "${SUBJECT_SIGNING_KEY_FILE}" ]] || {

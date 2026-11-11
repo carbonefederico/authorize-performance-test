@@ -7,12 +7,33 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Auto-provision .env on first use: every value ships with a working default
+# except the two DevOps credential slots. A fresh clone becomes usable by
+# filling exactly those two lines — no cp step.
+if [[ ! -f "${ROOT_DIR}/.env" && -f "${ROOT_DIR}/.env.example" ]]; then
+  cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+  chmod 600 "${ROOT_DIR}/.env"
+  echo "First run: created .env from .env.example." >&2
+fi
+
 if [[ -f "${ROOT_DIR}/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
   source "${ROOT_DIR}/.env"
   set +a
 fi
+
+# A missing DevOps credential is THE one thing scripts cannot default; point
+# straight at the two lines to fill.
+check_devops_credentials() {
+  if [[ -z "${PING_IDENTITY_DEVOPS_USER:-}" || -z "${PING_IDENTITY_DEVOPS_KEY:-}" ]]; then
+    echo "Fill in your Ping DevOps credentials in .env (two lines at the top):" >&2
+    echo "  PING_IDENTITY_DEVOPS_USER=..." >&2
+    echo "  PING_IDENTITY_DEVOPS_KEY=..." >&2
+    echo "Get them from the Ping DevOps portal (eval license)." >&2
+    exit 1
+  fi
+}
 
 # Optional load profile: PROFILE=stage-100 loads profiles/stage-100.env on
 # top of .env. Values in the profile win, so a profile fully describes its run.
