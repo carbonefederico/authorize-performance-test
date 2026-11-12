@@ -1,33 +1,29 @@
 #!/usr/bin/env bash
-# build-package.sh — publish a deployment package: build from PAP's API,
-# upload to the S3 package store.
+# build-package.sh — build a deployment package from PAP's API and publish it
+# through PAP to the S3 package store.
 #
-# This is the API equivalent of the Policy Editor's publish-to-store action:
-# the PAZ nodes run in embedded PDP mode polling an S3 deployment package
-# store (created in AWS by scripts/setup-aws.sh, wired in PAZ by the server
-# profile's dsconfig layer). PAP holds the committed AgentGatewayPortfolioMCP
-# branch (imported by its bootstrap hook at boot). Re-runnable: each run
-# creates a fresh package (timestamped name, dodging PAP's duplicate-name
-# errors) and uploads it under the bucket prefix; the PAZ nodes pick it up by
+# The PAZ nodes run in embedded PDP mode polling an S3 deployment package
+# store (created in AWS by scripts/setup-aws.sh, wired into PAZ by the server
+# profile's dsconfig layer, and registered as a PAP publishing target by the
+# profile's 50-before-post-start.sh hook). PAP holds the committed
+# AgentGatewayPortfolioMCP branch (imported by its bootstrap hook at boot).
+# Re-runnable: each run creates a fresh package (timestamped name, dodging
+# PAP's duplicate-name errors) and publishes it; the PAZ nodes pick it up by
 # polling within poll-interval — no restart.
 #
 # Sequence: find the branch head snapshot -> export it -> create a package
-# rooted at the Global Decision Point -> download the bytes -> upload to
-# s3://<bucket>/<prefix>/. Requires PAP reachable at ${PAP_URL} (the public
-# ingress host, .env's PAP_PUBLIC_HOST) and AWS credentials resolvable in
-# the session (aws login).
+# rooted at the Global Decision Point -> publish via
+# POST /api/deployment-package-store/paz-perf-packages/package (PAP writes
+# the package bytes AND the pointer file the PAZ poller requires — the same
+# two objects the Deployment Manager UI's Publish action writes) -> download
+# a copy into results/ for inspection. Requires PAP reachable at ${PAP_URL}
+# (the public ingress host, .env's PAP_PUBLIC_HOST).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 require_command curl
 require_command python3
-require_command aws
 require_value PAP_ADMIN_PASSWORD
-require_value PAZ_S3_BUCKET
-require_value PAZ_S3_PREFIX
-require_value PAZ_S3_REGION
-require_value PAZ_S3_ACCESS_KEY
-require_value PAZ_S3_SECRET_KEY
 
 PAP_URL="https://${PAP_PUBLIC_HOST:-${PAP_RELEASE}-pingauthorizepap.ping-devops.com}"
 AUTH="administrator:${PAP_ADMIN_PASSWORD}"
@@ -108,22 +104,25 @@ else:
 ")"
 echo "Created package ${pkg_name} (${pkg_id})" >&2
 
-# --- 4. download the package bytes ------------------------------------------
+# --- 4. publish through PAP to the store --------------------------------------
+# PAP writes the package object (named by package id) and the pointer file
+# deploymentpackage.store that says which id is current — exactly what the
+# Deployment Manager's Publish action writes. PAP holds the S3 credentials in
+# its own configuration; nothing here touches AWS.
+publish_code="$(curl -sk "${auth_headers[@]}" -X POST -H 'Content-Type: application/json' \
+  -d "{\"id\":\"${pkg_id}\"}" -o /tmp/pap-publish-response -w "%{http_code}" \
+  "${PAP_URL}/api/deployment-package-store/paz-perf-packages/package")" \
+  || fail "Store publish call failed for package ${pkg_id}" "curl failed"
+[[ "${publish_code}" == "200" ]] \
+  || fail "Store publish returned HTTP ${publish_code} (store paz-perf-packages registered in PAP? see profile hook 50-before-post-start.sh)" \
+           "$(head -c 400 /tmp/pap-publish-response)"
+echo "Published package ${pkg_id} through PAP to s3://${PAZ_S3_BUCKET}/${PAZ_S3_PREFIX}/"
+
+# --- 5. keep a local copy for inspection --------------------------------------
 mkdir -p "$(dirname "${TARGET}")"
 curl -sk "${auth_headers[@]}" -o "${TARGET}" \
   "${PAP_URL}/api/deployment-packages/${pkg_id}/data" \
   || fail "Package download failed for ${pkg_id}" "curl failed"
 [[ -s "${TARGET}" ]] || fail "Downloaded package is empty" "${TARGET}"
-echo "Downloaded ${TARGET} ($(wc -c < "${TARGET}" | tr -d ' ') bytes)"
-
-# --- 5. publish to the S3 package store --------------------------------------
-# A timestamped object name keeps every publish distinct; bucket versioning
-# (enabled by setup-aws.sh) preserves the history for rollback.
-S3_URI="s3://${PAZ_S3_BUCKET}/${PAZ_S3_PREFIX}/${pkg_name}.deploymentpackage"
-AWS_ACCESS_KEY_ID="${PAZ_S3_ACCESS_KEY}" \
-AWS_SECRET_ACCESS_KEY="${PAZ_S3_SECRET_KEY}" \
-AWS_DEFAULT_REGION="${PAZ_S3_REGION}" \
-  aws s3 cp "${TARGET}" "${S3_URI}" \
-  || fail "S3 upload failed to ${S3_URI}" "aws s3 cp"
-echo "Published ${S3_URI}"
+echo "Saved ${TARGET} ($(wc -c < "${TARGET}" | tr -d ' ') bytes)"
 echo "PAZ nodes pick it up by polling (poll-interval 30s) — no restart."
