@@ -22,7 +22,7 @@
 dsconfig create-deployment-package-store \
     --store-name paz-perf-packages \
     --type s3 \
-    --set poll-interval:30 \
+    --set poll-interval:30s \
     --set "s3-bucket-name:${PAZ_S3_BUCKET}" \
     --set "s3-bucket-prefix:${PAZ_S3_PREFIX}" \
     --set "s3-region-name:${PAZ_S3_REGION}" \
