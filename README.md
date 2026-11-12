@@ -143,43 +143,46 @@ by hand inside the cluster. The namespace defaults to `paz-perf`.
    from it at boot): `gh repo create carbonefederico/authorize-performance-test
    --public --source . --push`.
 
-The deploy needs nothing else: `create-secrets.sh` (inside `deploy.sh prep`)
-builds the chart's `devops-secret` from `.env`'s DevOps credentials, the
-sideband shared secret, and the k6 secret. PAP's admin password is the lab
-constant in `.env` (`PAP_ADMIN_PASSWORD`, the DevOps default the images boot
-with); scripts use it to authenticate against PAP client-side.
+The deploy needs nothing else: `create-secrets.sh` (inside `deploy.sh`)
+builds the chart's TLS secrets and the `paz-secrets`/`paz-s3`/`paz-loadtest`
+Secrets from `.env` (the chart's `devops-secret` licensing Secret is the
+operator's to provision). PAP's admin password is the lab constant in
+`.env` (`PAP_ADMIN_PASSWORD`, the DevOps default the images boot with);
+scripts use it to authenticate against PAP client-side.
 
-### Step 1 — deploy (~15 minutes, phased)
+### Step 1 — deploy everything to test-ready (~15 minutes)
 
 ```bash
-./scripts/deploy.sh headroom   # per-node capacity picture before anything installs
-./scripts/deploy.sh stack      # one release: PAP + 2 PAZ replicas, waits for all Ready
-./scripts/deploy.sh package    # publish the deployment package to S3 via PAP's API (public host);
-                               # PAZ's poller picks it up within 30s — no restart
-./scripts/verify.sh            # 2 PAZ pods, 1 PAP pod, Service on 8443
+./scripts/deploy.sh headroom   # optional: per-node capacity picture first
+./scripts/deploy.sh            # everything: secrets, the whole stack (one
+                               # release: PAP + 2 PAZ replicas), publish the
+                               # policy package through PAP, wait until both
+                               # PAZ nodes load it from the store, smoke-test
+                               # the three go/no-go decisions
 ```
+
+The command ends when the stack is Ready, the package is loaded by both
+replicas, and smoke passed 3/3 — at that point the only remaining step is
+triggering the campaign itself (Step 2). Re-running `./scripts/deploy.sh`
+at any time is safe: secrets and the helm release upgrade in place, the
+package publish creates a fresh package, and the PAZ nodes pick it up
+without a restart.
 
 On first deploy, fill in the three version-specific verifications in
 `server-profiles/README.md` (in-container paths, dsconfig property spelling,
-monitor providers) — the deploy phases print what each needs.
+monitor providers) — the deploy output prints what each needs.
 
-### Step 2 — smoke test (the go/no-go)
-
-With a port-forward running (`kubectl -n ${NAMESPACE} port-forward \
-pod/${PAZ_RELEASE}-pingauthorize-0 18443:1443`; the chart maps the PAZ
-HTTPS listener as Service 443 → container 1443):
+The deploy's final smoke step runs the go/no-go itself (a valid token with
+rotated `sub` → permit; a garbage token → a 200 carrying a 401 denial, so
+the validator is proven live; a second rotated token → permit). To re-run
+it alone later:
 
 ```bash
+kubectl -n ${NAMESPACE} port-forward pod/${PAZ_RELEASE}-pingauthorize-0 18443:1443 &
 ./scripts/smoke.sh
 ```
 
-Three asserts: a valid token with rotated `sub` → permit; a garbage token →
-a 200 carrying a 401 denial (the validator is live); a second rotated token →
-permit. All three must pass before any load run; the first assert also
-settles that the policies permit rotated subjects, not just the sibling's
-pinned `vip_user`.
-
-### Step 3 — run the campaign (two terminals)
+### Step 2 — run the campaign (two terminals)
 
 ```bash
 # Terminal A — resource monitor; leave running for the whole campaign:
@@ -197,7 +200,7 @@ Never run a level above the 500/s bound. Each run saves per-agent k6 logs and
 metric streams, `env.json`, and the `cn=Monitor` scrape into
 `results/<run_id>/` and exits non-zero if a k6 threshold failed.
 
-### Step 4 — report
+### Step 3 — report
 
 ```bash
 python3 scripts/generate-report.py <run_id>   # newest run if omitted

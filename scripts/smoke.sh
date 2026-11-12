@@ -15,12 +15,12 @@ done
 }
 
 port="${PAZ_PORT_FORWARD:-18443}"
-if [[ "${PAZ_SIDEBAND_URL}" != *localhost* ]]; then
-  # In-cluster/VPN URL from .env: connectivity is the cluster's problem, no preflight.
+if [[ -n "${PAZ_SIDEBAND_OVERRIDE:-}" ]]; then
+  # An explicit override URL wins; connectivity is the caller's problem.
   :
 elif ! nc -z localhost "${port}" 2>/dev/null; then
   echo "Nothing listening on localhost:${port}." >&2
-  echo "Start the port-forward first: kubectl -n ${NAMESPACE} port-forward svc/${PAZ_RELEASE}-pingauthorize ${port}:8443" >&2
+  echo "Start the port-forward first: kubectl -n ${NAMESPACE} port-forward pod/${PAZ_RELEASE}-pingauthorize-0 ${port}:1443" >&2
   exit 1
 fi
 
