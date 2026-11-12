@@ -48,12 +48,13 @@ for path_var in SUBJECT_SIGNING_KEY_FILE; do
 done
 
 NAMESPACE="${NAMESPACE:-paz-perf}"
-# Release names derive from the project folder name (the operator's namespace
-# convention: <project>-<product>; the chart itself appends the product name),
-# so a checkout at any path produces consistent, collision-free names.
+# Two releases from the same chart need distinct names. The operator's
+# namespace convention is <project>-<product>; the chart appends the product
+# name to the release, so the releases carry a SHORT product tag and the
+# fullnames read <folder>-pap-pingauthorizepap / <folder>-paz-pingauthorize.
 PROJECT_SLUG="$(basename "${ROOT_DIR}")"
-PAZ_RELEASE="${PAZ_RELEASE:-${PROJECT_SLUG}}"
-PAP_RELEASE="${PAP_RELEASE:-${PROJECT_SLUG}}"
+PAZ_RELEASE="${PAZ_RELEASE:-${PROJECT_SLUG}-paz}"
+PAP_RELEASE="${PAP_RELEASE:-${PROJECT_SLUG}-pap}"
 LOADTEST_RELEASE="${LOADTEST_RELEASE:-${PROJECT_SLUG}-loadtest}"
 
 require_command() {

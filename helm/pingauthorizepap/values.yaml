@@ -31,10 +31,9 @@ pingauthorizepap:
   envs:
     SERVER_PROFILE_URL: ""    # injected via --set-string from scripts/deploy.sh
     SERVER_PROFILE_PATH: "server-profiles/pingauthorizepap"
-    # The PAP UI derives its API base from this: <release>-pingauthorizepap
-    # (the release name is the project folder name; the chart prepends it to
-    # the default domain). Update alongside any PAP_RELEASE override.
-    PING_EXTERNAL_BASE_URL: "authorize-performance-test-pingauthorizepap.ping-devops.com:443"
+    # The PAP UI derives its API base from this: <PAP_RELEASE>-pingauthorizepap
+    # (release = folder-pap; the chart prepends the release to the domain).
+    PING_EXTERNAL_BASE_URL: "authorize-performance-test-pap-pingauthorizepap.ping-devops.com:443"
   workload:
     type: StatefulSet
     statefulSet:

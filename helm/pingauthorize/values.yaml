@@ -43,6 +43,14 @@ pingauthorize:
         cpu: "4"
         memory: 6Gi
     env:
+      # The dsconfig layer's trusted-certificate import needs the absolute
+      # in-container path of the profile-shipped certificate. PF's sibling
+      # documents the profile instance/ layout surfacing at
+      # ${SERVER_ROOT_DIR}/server/default/data/<file> — hardcoded here
+      # (verify against the live pod on first boot; adjust if the image
+      # version's server root differs).
+      - name: PAZ_CERT_PATH
+        value: /opt/server/server/default/data/perf-subject-cert.pem
       - name: SIDEBAND_SHARED_SECRET
         valueFrom:
           secretKeyRef:
