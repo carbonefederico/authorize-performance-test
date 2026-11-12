@@ -46,10 +46,10 @@ else
 fi
 
 if kubectl -n "${NAMESPACE}" get svc "${PAZ_RELEASE}-pingauthorize" \
-    -o jsonpath='{.spec.ports[?(@.port==8443)].port}' 2>/dev/null | grep -q 8443; then
-  echo "PASS: Service ${PAZ_RELEASE}-pingauthorize exposes 8443"
+    -o jsonpath='{.spec.ports[?(@.port==443)].port}' 2>/dev/null | grep -q 443; then
+  echo "PASS: Service ${PAZ_RELEASE}-pingauthorize exposes 443 (PAZ HTTPS listener)"
 else
-  echo "FAIL: Service ${PAZ_RELEASE}-pingauthorize does not expose 8443"
+  echo "FAIL: Service ${PAZ_RELEASE}-pingauthorize does not expose 443"
   fail=1
 fi
 
