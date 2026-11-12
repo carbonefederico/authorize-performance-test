@@ -3,7 +3,8 @@
 #
 # The PAP `setup` tool generates config/options.yml from the image template,
 # overwriting anything a server profile ships at the same path, so the store
-# is added here instead: post-setup, pre-server-start (hook 50 slot), by
+# is added here instead: by overriding the stock 50-before-post-start.sh (same
+# filename = same slot), which runs post-setup and pre-server-start, by
 # inserting the deploymentPackageStores entry into the generated file. The
 # Publish action in the Deployment Manager UI (and the equivalent
 # POST /api/deployment-package-store/<name>/package call made by
