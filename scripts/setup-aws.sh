@@ -18,7 +18,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 require_command aws
 
 REGION="${PAZ_S3_REGION:-us-east-1}"
-BUCKET="${PAZ_S3_BUCKET:-carbonefederico-paz-perf-packages}"
+BUCKET="${PAZ_S3_BUCKET:-fc-paz-perf-packages}"
 PREFIX="${PAZ_S3_PREFIX:-policy}"
 IAM_USER="${PAZ_S3_IAM_USER:-paz-perf-package-store}"
 
