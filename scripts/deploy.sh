@@ -66,6 +66,7 @@ case "${phase}" in
     ;;
 
   prep)
+    kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
     "${ROOT_DIR}/scripts/create-secrets.sh"
     ensure_repo
     install_or_upgrade "${PAP_RELEASE}" "${ROOT_DIR}/helm/pingauthorizepap/values.yaml" \
