@@ -2,9 +2,9 @@
 # deploy.sh — phased deployment of the PAZ sideband performance stack.
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
-#   ./scripts/deploy.sh prep       create secrets + install PAP (ping chart, direct reference)
-#   ./scripts/deploy.sh package    wait for PAP, publish the deployment package to S3
-#   ./scripts/deploy.sh runtime    install/upgrade PAZ (embedded PDP polling the S3 store), wait Ready
+#   ./scripts/deploy.sh pap        create namespace+secrets, install PAP, wait Ready
+#   ./scripts/deploy.sh package    publish the deployment package to S3 (needs PAP running)
+#   ./scripts/deploy.sh paz        install/upgrade PAZ (embedded PDP polling the S3 store), wait Ready
 #
 # Two direct chart references — the manual-deploy shape, no umbrella chart,
 # no vendored dependency:
@@ -97,7 +97,7 @@ print("Stack needs: PAP 1 + PAZ 2x2 = 5 CPU of requests; k6 agents later ~0.1 ea
 PY
     ;;
 
-  prep)
+  pap)
     kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
     "${ROOT_DIR}/scripts/create-secrets.sh"
     ensure_repo
@@ -105,7 +105,7 @@ PY
       --set-string "pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAP_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
-    echo "prep: secrets created and PAP is Ready. PAZ not installed yet."
+    echo "pap: secrets created and PAP is Ready. PAZ not installed yet."
     ;;
 
   package)
@@ -122,6 +122,11 @@ PY
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
     "${ROOT_DIR}/scripts/verify.sh"
     echo "runtime: both PAZ pods Ready. Run ./scripts/smoke.sh next."
+    ;;
+
+  prep|runtime)
+    echo "Renamed: prep is now 'pap', runtime is now 'paz' (deploy.sh pap / deploy.sh paz)." >&2
+    exit 1
     ;;
 
   *)

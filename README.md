@@ -152,9 +152,9 @@ with); scripts use it to authenticate against PAP client-side.
 
 ```bash
 ./scripts/deploy.sh headroom   # per-node capacity picture before anything installs
-./scripts/deploy.sh prep       # secrets + PAP first (PAZ disabled), waits for PAP Ready
-./scripts/deploy.sh package    # publish the .deploymentpackage via PAP's API (public host, no port-forward)
-./scripts/deploy.sh runtime    # push profile (now with package), enable PAZ, wait Ready
+./scripts/deploy.sh pap        # namespace + secrets + PAP install, waits for PAP Ready
+./scripts/deploy.sh package    # publish the .deploymentpackage to S3 via PAP's API (public host)
+./scripts/deploy.sh paz        # install the 2 PAZ replicas, wait Ready
 ./scripts/verify.sh            # 2 PAZ pods, 1 PAP pod, Service on 8443
 ```
 
