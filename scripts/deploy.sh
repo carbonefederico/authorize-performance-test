@@ -60,9 +60,41 @@ install_or_upgrade() { # install_or_upgrade <release> <values-file> <extra args.
 
 case "${phase}" in
   headroom)
-    echo "Per-node allocatable vs requested (consider co-tenants before load runs):"
-    kubectl describe nodes 2>/dev/null | grep -A4 "Allocated resources:" | grep -E "cpu|memory" || echo "(allocation data unavailable)"
-    kubectl get nodes -o wide 2>/dev/null | awk 'NR>1 {print "  node:", $1}' || true
+    # Per-node CPU picture the operator can actually read: allocatable,
+    # what the co-tenants already request, what is left, and whether this
+    # stack (PAP 1 CPU + 2x PAZ 2 CPU) fits on that node.
+    python3 - <<'PY'
+import subprocess, json
+
+def kubectl_json(*args):
+    out = subprocess.run(['kubectl'] + list(args), capture_output=True, text=True)
+    return json.loads(out.stdout) if out.stdout.strip() else {}
+
+def parse_cpu(v):
+    v = str(v)
+    return float(v[:-1]) / 1000 if v.endswith('m') else float(v or 0)
+
+nodes = kubectl_json('get', 'nodes', '-o', 'json')['items']
+alloc = {n['metadata']['name']: parse_cpu(n['status']['allocatable'].get('cpu', '0')) for n in nodes}
+req = {name: 0.0 for name in alloc}
+for pod in kubectl_json('get', 'pods', '-A', '-o', 'json')['items']:
+    if pod.get('status', {}).get('phase') in ('Succeeded', 'Failed'):
+        continue
+    name = pod['spec'].get('nodeName')
+    if name in req:
+        for c in pod['spec'].get('containers', []):
+            req[name] += parse_cpu(c.get('resources', {}).get('requests', {}).get('cpu', '0'))
+
+print(f"{'NODE':<44} {'ALLOC':>5} {'REQ':>5} {'FREE':>5}   FITS-STACK (needs 2)")
+total_free = 0.0
+for name in sorted(alloc):
+    free = alloc[name] - req[name]
+    total_free += free
+    fits = 'yes' if free >= 2 else 'NO'
+    print(f'{name:<44} {alloc[name]:>4.1f} {req[name]:>5.1f} {free:>5.1f}   {fits}')
+print(f'{"TOTAL free CPU":<55} {total_free:.1f}')
+print("Stack needs: PAP 1 + PAZ 2x2 = 5 CPU of requests; k6 agents later ~0.1 each (burstable).")
+PY
     ;;
 
   prep)
