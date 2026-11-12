@@ -74,20 +74,22 @@ else:
     sys.exit('no head snapshot field found in branch object; inspect the JSON above')
 ")"
 
-# --- 2. export the committed head ------------------------------------------
+# --- 2. export the committed head (confirmation; the stream itself is the snapshot) ---
 exported="$(curl -sk "${auth_headers[@]}" -X POST -H 'Content-Type: application/json' -d '[]' \
   "${PAP_URL}/api/snapshot/${head_id}/export")" \
   || fail "Snapshot export failed for head ${head_id}" "curl failed"
-exported_id="$(echo "${exported}" | python3 -c "
+# The export stream is the snapshot: DataStreamHeader + PackageHeader (echoing
+# the snapshot id) + elements. Confirm the header matches the branch head.
+echo "${exported}" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-for key in ('snapshotId', 'id'):
-    if isinstance(data, dict) and data.get(key):
-        print(data[key]); break
-else:
-    sys.exit('export response carries no snapshot id; inspect it above')
-")"
-echo "Exported snapshot: ${exported_id}" >&2
+hdr = next((e for e in data if isinstance(e, dict) and e.get('@class', '').endswith('PackageHeader')), None)
+sid = (hdr or {}).get('snapshotId')
+if sid != '${head_id}':
+    sys.exit(f'export header snapshotId {sid} does not match branch head ${head_id}')
+print('Exported snapshot confirmed: ' + sid, file=sys.stderr)
+"
+exported_id="${head_id}"
 
 # --- 3. create the deployment package --------------------------------------
 pkg_name="agentgateway-portfolio-mcp-$(date -u +%Y%m%dT%H%M%SZ)"
