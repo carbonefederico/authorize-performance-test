@@ -105,7 +105,7 @@ function rpcBody(userIndex, iter) {
     jsonrpc: '2.0',
     method: 'tools/call',
     params: {
-      name: 'get_portfolio',
+      name: 'get_portfolio_summary',
       arguments: {
         customerId: `CUST-${String((userIndex % userCount) + 1).padStart(5, '0')}`,
         txn: `txn-${iter}`,

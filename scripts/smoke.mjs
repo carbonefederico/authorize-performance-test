@@ -47,7 +47,7 @@ async function decide(label, token, userIndex, iter) {
       jsonrpc: "2.0",
       method: "tools/call",
       params: {
-        name: "get_portfolio",
+        name: "get_portfolio_summary",
         arguments: { customerId: `CUST-${String(userIndex + 1).padStart(5, "0")}`, txn: `txn-${iter}` },
       },
       id: iter,
@@ -86,11 +86,14 @@ function report(result, expected) {
     (r) => r.status === 200 && r.payload && !r.payload.response);
 }
 
-// (b) garbage token -> 200 with embedded 401 denial (validator is live)
+// (b) garbage token -> 200 with an embedded denial whose response_code is
+// "401" (the validator rejected the token; PAZ serializes the embedded
+// response_code as a string). A down validator would permit or deny without
+// this shape, so the assert proves the validator is live.
 {
   const token = "garbage.token.value";
   report(await decide("(b) garbage token", token, 1, 2),
-    (r) => r.status === 200 && r.payload?.response?.response_code === 401);
+    (r) => r.status === 200 && String(r.payload?.response?.response_code) === "401");
 }
 
 // (c) second valid token, rotated sub vip-user-042 -> permit
