@@ -52,7 +52,7 @@ branches="$(curl -sk "${auth_headers[@]}" "${PAP_URL}/api/version-control/branch
 branch_json="$(echo "${branches}" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-items = data if isinstance(data, list) else data.get('branches', data.get('items', []))
+items = data if isinstance(data, list) else data.get('data', data.get('branches', data.get('items', [])))
 for b in items:
     if b.get('name') == '${BRANCH_NAME}':
         print(json.dumps(b))
