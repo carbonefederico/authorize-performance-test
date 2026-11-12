@@ -1,0 +1,108 @@
+# paz chart values — one release, the whole Ping stack.
+# deploy.sh stack installs PAP + PAZ together; PAZ boots embedded-PDP polling
+# the S3 package store (empty store at boot is a normal production state —
+# the poller picks the package up when published). Release name = the project
+# folder name; the chart appends the product name, so fullnames read
+# authorize-performance-test-pingauthorize / -pingauthorizepap.
+ping-devops:
+  global:
+    envs:
+      PING_IDENTITY_ACCEPT_EULA: 'YES'
+    image:
+      tag: '2607'
+    privateCert:
+      generate: true
+    ingress:
+      enabled: false
+  pingauthorize:
+    enabled: true
+    ingress:
+      enabled: false
+    envs:
+      SERVER_PROFILE_URL: ''
+      SERVER_PROFILE_PATH: server-profiles/pingauthorize
+    workload:
+      type: StatefulSet
+      statefulSet:
+        persistentvolume:
+          enabled: false
+    container:
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: '2'
+          memory: 3Gi
+        limits:
+          cpu: '4'
+          memory: 6Gi
+      env:
+      - name: PAZ_CERT_PATH
+        value: /tmp/server-profile/server-profiles/pingauthorize/instance/server/default/data/perf-subject-cert.pem
+      - name: SIDEBAND_SHARED_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: paz-secrets
+            key: sideband-shared-secret
+      - name: PAZ_S3_BUCKET
+        valueFrom:
+          secretKeyRef:
+            name: paz-s3
+            key: bucket
+      - name: PAZ_S3_PREFIX
+        valueFrom:
+          secretKeyRef:
+            name: paz-s3
+            key: prefix
+      - name: PAZ_S3_REGION
+        valueFrom:
+          secretKeyRef:
+            name: paz-s3
+            key: region
+      - name: PAZ_S3_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: paz-s3
+            key: access-key
+      - name: PAZ_S3_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: paz-s3
+            key: secret-key
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: pingauthorize
+                  app.kubernetes.io/instance: paz
+  pingauthorizepap:
+    enabled: true
+    ingress:
+      enabled: true
+      defaultDomain: ping-devops.com
+      addReleaseNameToHost: prepend
+      annotations:
+        nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+        kubernetes.io/ingress.class: nginx-public
+      spec:
+        ingressClassName: nginx-public
+    envs:
+      SERVER_PROFILE_URL: ''
+      SERVER_PROFILE_PATH: server-profiles/pingauthorizepap
+      PING_EXTERNAL_BASE_URL: authorize-performance-test-pap-pingauthorizepap.ping-devops.com:443
+    workload:
+      type: StatefulSet
+      statefulSet:
+        persistentvolume:
+          enabled: false
+    container:
+      resources:
+        requests:
+          cpu: '1'
+          memory: 2Gi
+        limits:
+          cpu: '2'
+          memory: 4Gi

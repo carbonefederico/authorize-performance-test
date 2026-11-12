@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# deploy.sh — phased deployment of the PAZ sideband performance stack.
+# deploy.sh — deployment of the PAZ sideband performance stack.
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
-#   ./scripts/deploy.sh pap        create namespace+secrets, install PAP, wait Ready
+#   ./scripts/deploy.sh stack      create secrets, install the WHOLE Ping stack (PAP + PAZ), wait Ready
 #   ./scripts/deploy.sh package    publish the deployment package to S3 (needs PAP running)
-#   ./scripts/deploy.sh paz        install/upgrade PAZ (embedded PDP polling the S3 store), wait Ready
 #
-# Two direct chart references — the manual-deploy shape, no umbrella chart,
-# no vendored dependency:
-#   helm install pap pingidentity/ping-devops  -f helm/pingauthorizepap/values.yaml
-#   helm install paz pingidentity/ping-devops  -f helm/pingauthorize/values.yaml
+# One chart (helm/paz), one values file, one release carrying both products —
+# the manual-deploy shape: helm install <folder> pingidentity/ping-devops
+# -f helm/paz/values.yaml. PAZ boots embedded-PDP polling the S3 store; an
+# empty bucket at boot is a normal production state — the poller picks the
+# package up when 'stack' is followed by 'package'. No restart, no phasing.
+#
+# The k6 load generator is NOT part of the stack: it installs only when a
+# campaign run starts (scripts/run-in-cluster.sh), so deploying never
+# generates test traffic.
 #
 # The profile lives in this repository under server-profiles/ and configures
 # the SERVERS (dsconfig layer, certificate, S3 store definition); the POLICY
@@ -97,14 +101,18 @@ print("Stack needs: PAP 1 + PAZ 2x2 = 5 CPU of requests; k6 agents later ~0.1 ea
 PY
     ;;
 
-  pap)
+  stack)
     "${ROOT_DIR}/scripts/create-secrets.sh"
     ensure_repo
-    install_or_upgrade "${PAP_RELEASE}" "${ROOT_DIR}/helm/pingauthorizepap/values.yaml" \
+    install_or_upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz/values.yaml" \
+      --set-string "pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}" \
       --set-string "pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
-      -l "app.kubernetes.io/instance=${PAP_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
-    echo "pap: secrets created and PAP is Ready. PAZ not installed yet."
+      -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
+    kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
+      -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
+    "${ROOT_DIR}/scripts/verify.sh"
+    echo "stack: PAP and both PAZ replicas are Ready. Next: ./scripts/deploy.sh package."
     ;;
 
   package)
@@ -113,18 +121,8 @@ PY
     echo "the PAZ nodes poll and load it without a restart."
     ;;
 
-  paz)
-    ensure_repo
-    install_or_upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/pingauthorize/values.yaml" \
-      --set-string "pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
-    kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
-      -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
-    "${ROOT_DIR}/scripts/verify.sh"
-    echo "paz: both PAZ pods Ready. Run ./scripts/smoke.sh next."
-    ;;
-
-  prep|runtime)
-    echo "Renamed: prep is now 'pap', runtime is now 'paz' (deploy.sh pap / deploy.sh paz)." >&2
+  pap|paz|prep|runtime)
+    echo "The deploy is now 'stack' (whole Ping stack, one release) + 'package' (publish policy to S3)." >&2
     exit 1
     ;;
 

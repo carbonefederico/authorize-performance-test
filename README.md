@@ -96,12 +96,11 @@ verbatim in its essentials:
 ## Repository layout
 
 ```
-helm/pingauthorize/    Values for the official pingidentity/ping-devops chart
-helm/pingauthorizepap/ (0.15.0, image tag 2607), installed as two direct
-                       releases — the manual-deploy shape, no umbrella chart:
-                       1 PAP StatefulSet (public ingress, inspection surface)
-                       and 2 PAZ replicas (cluster-internal, ephemeral /opt/out,
-                       lab sizing requests 2 CPU/3Gi, limits 4/6Gi).
+helm/paz/            One configuration chart for the whole Ping stack: values for
+                     the official pingidentity/ping-devops chart (0.15.0, tag 2607),
+                     one release carrying PAP (public ingress, inspection surface)
+                     and 2 PAZ replicas (cluster-internal, ephemeral /opt/out,
+                     lab sizing requests 2 CPU/3Gi, limits 4/6Gi).
 helm/loadtest/       The k6 agent chart: an indexed Job, N parallel agent pods,
                      each running files/sideband-decision.js with files/envelope.mjs.
 server-profiles/     The PAZ dsconfig layer (trusted-certificate validator,
@@ -152,9 +151,9 @@ with); scripts use it to authenticate against PAP client-side.
 
 ```bash
 ./scripts/deploy.sh headroom   # per-node capacity picture before anything installs
-./scripts/deploy.sh pap        # namespace + secrets + PAP install, waits for PAP Ready
-./scripts/deploy.sh package    # publish the .deploymentpackage to S3 via PAP's API (public host)
-./scripts/deploy.sh paz        # install the 2 PAZ replicas, wait Ready
+./scripts/deploy.sh stack      # one release: PAP + 2 PAZ replicas, waits for all Ready
+./scripts/deploy.sh package    # publish the deployment package to S3 via PAP's API (public host);
+                               # PAZ's poller picks it up within 30s — no restart
 ./scripts/verify.sh            # 2 PAZ pods, 1 PAP pod, Service on 8443
 ```
 

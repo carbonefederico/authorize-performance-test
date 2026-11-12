@@ -1,0 +1,9 @@
+apiVersion: v2
+name: paz
+description: PAZ sideband performance stack (PAP + PAZ from the official Ping chart, one release)
+type: application
+version: 0.1.0
+dependencies:
+  - name: ping-devops
+    version: 0.15.0
+    repository: https://helm.pingidentity.com/

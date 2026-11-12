@@ -17,16 +17,15 @@ check() { # check <label> <command...>
 }
 
 check "node unit tests (envelope, claims, decision)" npm test
-render_values() { # render_values <release> <values-file> <set-arg>
+render_values() { # render_values <release> <set-arg>
   # helm lint on chart 0.15.0 mis-parses its own multi-doc secret-cert.yaml
   # (lint-only quirk; template and install --dry-run are clean), so the
   # chart-level check is a full client render instead.
   local chart_tgz="${TMPDIR:-/tmp}/ping-devops-${PING_CHART_VERSION:-0.15.0}.tgz"
   [[ -f "${chart_tgz}" ]] || helm pull pingidentity/ping-devops --version "${PING_CHART_VERSION:-0.15.0}" --destination "${chart_tgz%/*}" > /dev/null 2>&1
-  helm template "$1" "${chart_tgz}" -f "$2" --set-string "$3" > /dev/null 2>&1
+  helm template "$1" "${chart_tgz}" -f "${ROOT_DIR}/helm/paz/values.yaml" --set-string "$2" > /dev/null 2>&1
 }
-check "render helm/pingauthorize (values)" render_values test helm/pingauthorize/values.yaml "pingauthorize.envs.SERVER_PROFILE_URL=https://example.invalid/x.git"
-check "render helm/pingauthorizepap (values)" render_values test helm/pingauthorizepap/values.yaml "pingauthorizepap.envs.SERVER_PROFILE_URL=https://example.invalid/x.git"
+check "render helm/paz (values)" render_values test "pingauthorize.envs.SERVER_PROFILE_URL=https://example.invalid/x.git"
 check "helm lint helm/loadtest" bash -c "helm lint helm/loadtest > /dev/null"
 # k6 dry-run: exit 0 (all green) or 99 (thresholds crossed — expected with
 # nothing listening) both prove the script compiles and executes; a script
