@@ -33,7 +33,7 @@ flowchart LR
 
     k6 -- "POST /sideband/request<br/>PDG-TOKEN + Bearer<br/>(fresh self-signed RS256 per iteration)" --> svc
     svc --> paz
-    pap -. "build-package.sh via PAP API<br/>→ package published to s3://" .-> s3
+    pap -. "build-package.sh via PAP API<br/>→ PAP publishes package + pointer to s3://" .-> s3
     s3 -. "PAZ polls (30s)<br/>no restart on policy change" .-> paz
 ```
 
@@ -46,9 +46,11 @@ trusted-certificate model — the k6-signed tokens' public certificate ships
 in the PAZ server profile, so no remote fetch, cache, or key-rotation
 behavior exists on the measured path. Policy delivery is production-shaped:
 PAP authors the policy, `build-package.sh` publishes the immutable package
-to a private, versioned S3 bucket (the artifact plane Ping's Deployment
-Manager model prescribes), and the PAZ nodes poll and load it without a
-restart — the same machinery an S3-backed production deployment runs. The
+through PAP's package-store API to a private, versioned S3 bucket (PAP
+writes both the package object and the pointer file, exactly as the
+Deployment Manager's Publish action does), and the PAZ nodes poll and load
+it without a restart — the same machinery an S3-backed production
+deployment runs. The
 policies are the sibling project's `AgentGatewayPortfolioMCP` branch,
 packaged as-is, so the measured decisions exercise the real policy ladder
 (audience gate, agent-identity delegation, VIP check, scope check) rather
