@@ -2,9 +2,14 @@
 # deploy.sh — phased deployment of the PAZ sideband performance stack.
 #
 #   ./scripts/deploy.sh headroom   per-node allocatable-vs-requested summary
-#   ./scripts/deploy.sh prep       create secrets + install chart (PAP only, PAZ disabled)
+#   ./scripts/deploy.sh prep       create secrets + install PAP (ping chart, direct reference)
 #   ./scripts/deploy.sh package    wait for PAP, publish the deployment package to S3
-#   ./scripts/deploy.sh runtime    enable PAZ (embedded PDP polling the S3 store), wait Ready
+#   ./scripts/deploy.sh runtime    install/upgrade PAZ (embedded PDP polling the S3 store), wait Ready
+#
+# Two direct chart references — the manual-deploy shape, no umbrella chart,
+# no vendored dependency:
+#   helm install pap pingidentity/ping-devops  -f helm/pingauthorizepap/values.yaml
+#   helm install paz pingidentity/ping-devops  -f helm/pingauthorize/values.yaml
 #
 # The profile lives in this repository under server-profiles/ and configures
 # the SERVERS (dsconfig layer, certificate, S3 store definition); the POLICY
@@ -19,8 +24,8 @@
 # by build-package.sh and scrape-monitor.sh client-side. Only the profile
 # URLs are injected here.
 #
-# Phases are idempotent: helm install skips an existing release; upgrades
-# re-run. Run in order for a first deploy; re-run any phase after changes.
+# Phases are idempotent: helm install skips an existing release (upgrades
+# re-run). Run in order for a first deploy; re-run any phase after changes.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -33,10 +38,25 @@ phase="${1:-}"
   exit 1
 }
 
-chart_args=(
-  --set-string "ping-devops.pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
-  --set-string "ping-devops.pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
-)
+PAP_RELEASE="${PAP_RELEASE:-pap}"
+CHART_REPO="pingidentity/ping-devops"
+CHART_VERSION="${PING_CHART_VERSION:-0.15.0}"
+
+ensure_repo() {
+  helm repo add pingidentity https://helm.pingidentity.com/ --force-update > /dev/null
+}
+
+install_or_upgrade() { # install_or_upgrade <release> <values-file> <extra args...>
+  local release="$1"; shift
+  local values="$1"; shift
+  if helm -n "${NAMESPACE}" status "${release}" > /dev/null 2>&1; then
+    helm -n "${NAMESPACE}" upgrade "${release}" "${CHART_REPO}" \
+      --version "${CHART_VERSION}" -f "${values}" "$@"
+  else
+    helm -n "${NAMESPACE}" install "${release}" "${CHART_REPO}" \
+      --version "${CHART_VERSION}" -f "${values}" "$@"
+  fi
+}
 
 case "${phase}" in
   headroom)
@@ -47,17 +67,12 @@ case "${phase}" in
 
   prep)
     "${ROOT_DIR}/scripts/create-secrets.sh"
-    if helm -n "${NAMESPACE}" status "${PAZ_RELEASE}" > /dev/null 2>&1; then
-      echo "Release ${PAZ_RELEASE} already exists; upgrading with PAZ disabled."
-      helm -n "${NAMESPACE}" upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
-        --set ping-devops.pingauthorize.enabled=false
-    else
-      helm -n "${NAMESPACE}" install "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
-        --set ping-devops.pingauthorize.enabled=false
-    fi
+    ensure_repo
+    install_or_upgrade "${PAP_RELEASE}" "${ROOT_DIR}/helm/pingauthorizepap/values.yaml" \
+      --set-string "pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
-      -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
-    echo "prep: secrets created and PAP is Ready (PAZ still disabled)."
+      -l "app.kubernetes.io/instance=${PAP_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
+    echo "prep: secrets created and PAP is Ready. PAZ not installed yet."
     ;;
 
   package)
@@ -67,8 +82,9 @@ case "${phase}" in
     ;;
 
   runtime)
-    helm -n "${NAMESPACE}" upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz" "${chart_args[@]}" \
-      --set ping-devops.pingauthorize.enabled=true
+    ensure_repo
+    install_or_upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/pingauthorize/values.yaml" \
+      --set-string "pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
     "${ROOT_DIR}/scripts/verify.sh"

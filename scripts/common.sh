@@ -49,6 +49,7 @@ done
 
 NAMESPACE="${NAMESPACE:-paz-perf}"
 PAZ_RELEASE="${PAZ_RELEASE:-paz}"
+PAP_RELEASE="${PAP_RELEASE:-pap}"
 LOADTEST_RELEASE="${LOADTEST_RELEASE:-loadtest}"
 
 require_command() {

@@ -30,7 +30,7 @@ kubectl -n "${NAMESPACE}" get pods \
   -o jsonpath='{range .items[*]}{.metadata.name}{" on "}{.spec.nodeName}{"\n"}{end}'
 
 pap_ready="$(kubectl -n "${NAMESPACE}" get pods \
-  -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorizepap" \
+  -l "app.kubernetes.io/instance=${PAP_RELEASE},app.kubernetes.io/name=pingauthorizepap" \
   -o json 2>/dev/null | python3 -c "
 import json, sys
 pods = [p for p in json.load(sys.stdin)['items']

@@ -1,0 +1,49 @@
+# Values for the official pingidentity/ping-devops chart, PAP product only.
+# Installed directly (helm install pap pingidentity/ping-devops -f this file)
+# — no umbrella chart, no vendored dependency, the manual-deploy shape.
+#
+# PAP is the policy administrator's surface: it authors the policy branch at
+# boot (server profile hook) and is the one exposed workload — public via the
+# chart's ingress with the nginx default cert (the standard manual-deploy
+# shape; consumers all run lab TLS). Its admin password must not stay at the
+# DevOps default while exposed. PAP is off the decision path: idle during
+# load runs; the PAZ nodes consume policy from the S3 store.
+
+global:
+  envs:
+    PING_IDENTITY_ACCEPT_EULA: "YES"
+  image:
+    tag: "2607"
+  privateCert:
+    generate: true     # in-cluster listener TLS via the chart's private cert
+
+pingauthorizepap:
+  enabled: true
+  ingress:
+    enabled: true
+    defaultDomain: ping-devops.com
+    addReleaseNameToHost: prepend
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      kubernetes.io/ingress.class: "nginx-public"
+    spec:
+      ingressClassName: nginx-public
+  envs:
+    SERVER_PROFILE_URL: ""    # injected via --set-string from scripts/deploy.sh
+    SERVER_PROFILE_PATH: "server-profiles/pingauthorizepap"
+    # The PAP UI derives its API base from this; set it explicitly to the
+    # chart-derived public host (release-prepend + default domain).
+    PING_EXTERNAL_BASE_URL: "pap-pingauthorizepap.ping-devops.com:443"
+  workload:
+    type: StatefulSet
+    statefulSet:
+      persistentvolume:
+        enabled: false
+  container:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi

@@ -96,9 +96,12 @@ verbatim in its essentials:
 ## Repository layout
 
 ```
-helm/paz/            Values for the official ping-devops chart (0.15.0, image
-                     tag 2607): 1 PAP + 2 PAZ StatefulSets, ephemeral /opt/out,
-                     lab sizing (PAZ requests 2 CPU/3Gi, limits 4/6Gi).
+helm/pingauthorize/    Values for the official pingidentity/ping-devops chart
+helm/pingauthorizepap/ (0.15.0, image tag 2607), installed as two direct
+                       releases — the manual-deploy shape, no umbrella chart:
+                       1 PAP StatefulSet (public ingress, inspection surface)
+                       and 2 PAZ replicas (cluster-internal, ephemeral /opt/out,
+                       lab sizing requests 2 CPU/3Gi, limits 4/6Gi).
 helm/loadtest/       The k6 agent chart: an indexed Job, N parallel agent pods,
                      each running files/sideband-decision.js with files/envelope.mjs.
 server-profiles/     The PAZ dsconfig layer (trusted-certificate validator,
