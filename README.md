@@ -165,7 +165,9 @@ monitor providers) — the deploy phases print what each needs.
 
 ### Step 2 — smoke test (the go/no-go)
 
-With a port-forward running (`kubectl -n paz-perf port-forward svc/paz-pingauthorize 18443:8443`):
+With a port-forward running (`kubectl -n ${NAMESPACE} port-forward \
+pod/${PAZ_RELEASE}-pingauthorize-0 18443:1443`; the chart maps the PAZ
+HTTPS listener as Service 443 → container 1443):
 
 ```bash
 ./scripts/smoke.sh
