@@ -40,6 +40,28 @@ if [[ -z "${SIDEBAND_SHARED_SECRET:-}" ]]; then
   echo "Generated SIDEBAND_SHARED_SECRET and appended it to .env"
 fi
 
+# The chart 0.15.0 privateCert pre-install hook silently renders nothing (the
+# documented invalid-YAML-separator bug), so the pods' expected
+# <release>-pingauthorizepap-private-cert TLS Secret never lands and init
+# hangs on MountVolume. Generate it here with plain openssl — a 10-year
+# self-signed pair, the demo posture; consumers all run lab TLS anyway.
+for product in pingauthorizepap pingauthorize; do
+  secret_name="${PAP_RELEASE}-${product}-private-cert"
+  [[ "${product}" == "pingauthorize" ]] && secret_name="${PAZ_RELEASE}-${product}-private-cert"
+  if kubectl -n "${NAMESPACE}" get secret "${secret_name}" > /dev/null 2>&1; then
+    echo "TLS secret ${secret_name} already exists."
+    continue
+  fi
+  cert_dir="$(mktemp -d)"
+  openssl req -x509 -newkey rsa:2048 -keyout "${cert_dir}/tls.key" \
+    -out "${cert_dir}/tls.crt" -days 3650 -nodes \
+    -subj "/CN=${secret_name}" > /dev/null 2>&1
+  kubectl -n "${NAMESPACE}" create secret tls "${secret_name}" \
+    --cert="${cert_dir}/tls.crt" --key="${cert_dir}/tls.key"
+  rm -rf "${cert_dir}"
+  echo "Created TLS secret ${secret_name} (self-signed, 10y)."
+done
+
 kubectl -n "${NAMESPACE}" create secret generic paz-secrets \
   --from-literal=sideband-shared-secret="${SIDEBAND_SHARED_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
