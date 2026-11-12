@@ -28,7 +28,7 @@ flowchart LR
     svc["PAZ Service<br/>cluster-internal HTTPS"]
     paz["PAZ ×2 StatefulSet<br/>embedded PDP<br/>policy from S3 package store"]
     end
-    pap["PAP ×1<br/>authoring only — idle during runs"]
+    pap["PAP ×1<br/>authoring + inspection (public via ingress)"]
     s3["S3 bucket<br/>(versioned package store)"]
 
     k6 -- "POST /sideband/request<br/>PDG-TOKEN + Bearer<br/>(fresh self-signed RS256 per iteration)" --> svc
@@ -37,8 +37,11 @@ flowchart LR
     s3 -. "PAZ polls (30s)<br/>no restart on policy change" .-> paz
 ```
 
-What is deliberately absent: no JWKS server, no API gateway, no adapter, no
-Ingress or cert-manager. Token validation uses PAZ's local
+What is deliberately absent: no JWKS server, no API gateway, no adapter, and
+no ingress in front of the PDP (the measured path keeps its cluster-internal
+Service). PAP is the one exposed workload — the policy administrator's
+inspection surface, via the cluster's nginx-public ingress with a
+cert-issued TLS host. Token validation uses PAZ's local
 trusted-certificate model — the k6-signed tokens' public certificate ships
 in the PAZ server profile, so no remote fetch, cache, or key-rotation
 behavior exists on the measured path. Policy delivery is production-shaped:
@@ -147,7 +150,7 @@ with); scripts use it to authenticate against PAP client-side.
 ```bash
 ./scripts/deploy.sh headroom   # per-node capacity picture before anything installs
 ./scripts/deploy.sh prep       # secrets + PAP first (PAZ disabled), waits for PAP Ready
-./scripts/deploy.sh package    # build the .deploymentpackage from PAP's API
+./scripts/deploy.sh package    # publish the .deploymentpackage via PAP's API (public host, no port-forward)
 ./scripts/deploy.sh runtime    # push profile (now with package), enable PAZ, wait Ready
 ./scripts/verify.sh            # 2 PAZ pods, 1 PAP pod, Service on 8443
 ```

@@ -1,0 +1,34 @@
+{{- if .Values.pap.ingress.enabled }}
+# PAP console — exposed so the policy administrator can inspect and manage the
+# policy tree from a browser, and so build-package.sh reaches PAP's API
+# directly (no kubectl port-forward). The PDP (pingauthorize) stays
+# cluster-internal: the measured path must not gain an ingress hop.
+# backend-protocol HTTPS: PAP serves TLS on 8443.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-pap
+  labels:
+    app.kubernetes.io/name: pingauthorizepap
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    kubernetes.io/ingress.class: "nginx-public"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: "nginx-public"
+  tls:
+    - hosts:
+        - {{ .Values.pap.ingress.publicHost }}
+      secretName: {{ .Release.Name }}-pap-tls
+  rules:
+    - host: {{ .Values.pap.ingress.publicHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-pingauthorizepap
+                port:
+                  number: 8443
+{{- end }}

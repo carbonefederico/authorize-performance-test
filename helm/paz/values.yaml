@@ -94,6 +94,10 @@ ping-devops:
     envs:
       SERVER_PROFILE_URL: ""
       SERVER_PROFILE_PATH: "server-profiles/pingauthorizepap"
+      # The PAP UI derives its API base from this. The Ping chart only sets it
+      # from its own ingress (off here — our template renders it), so set it
+      # explicitly or the browser UI points at localhost:8443 (the sibling's fix).
+      PING_EXTERNAL_BASE_URL: "paz-perf-pap.ping-devops.com:443"
     workload:
       type: StatefulSet
       statefulSet:
@@ -108,5 +112,14 @@ ping-devops:
           cpu: "2"
           memory: 4Gi
 
-  pingdataconsole:
-    enabled: false
+# Non-Ping workloads (our templates) — at the chart root, not under ping-devops.
+# PAP console exposure: the policy administrator inspects/manages the policy
+# tree from a browser and build-package.sh reaches PAP's API directly.
+# PAP can rewrite the policy tree, so the admin password must not stay at the
+# DevOps default while this ingress is on.
+pap:
+  ingress:
+    enabled: true
+    publicHost: paz-perf-pap.ping-devops.com
+    clusterIssuer: letsencrypt-pdo
+

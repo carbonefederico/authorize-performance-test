@@ -13,9 +13,9 @@
 #
 # Sequence: find the branch head snapshot -> export it -> create a package
 # rooted at the Global Decision Point -> download the bytes -> upload to
-# s3://<bucket>/<prefix>/. Requires PAP reachable at
-# https://localhost:${PAP_PORT_FORWARD} (port-forward first) and AWS
-# credentials resolvable in the session (aws login).
+# s3://<bucket>/<prefix>/. Requires PAP reachable at ${PAP_URL} (the public
+# ingress host, .env's PAP_PUBLIC_HOST) and AWS credentials resolvable in
+# the session (aws login).
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -29,7 +29,7 @@ require_value PAZ_S3_REGION
 require_value PAZ_S3_ACCESS_KEY
 require_value PAZ_S3_SECRET_KEY
 
-PAP_URL="https://localhost:${PAP_PORT_FORWARD:-18443}"
+PAP_URL="https://${PAP_PUBLIC_HOST:-paz-perf-pap.ping-devops.com}"
 AUTH="administrator:${PAP_ADMIN_PASSWORD}"
 BRANCH_NAME="AgentGatewayPortfolioMCP"
 # The Global Decision Point PolicySet id inside the snapshot — the package
