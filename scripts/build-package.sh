@@ -29,7 +29,7 @@ require_value PAZ_S3_REGION
 require_value PAZ_S3_ACCESS_KEY
 require_value PAZ_S3_SECRET_KEY
 
-PAP_URL="https://${PAP_PUBLIC_HOST:-paz-perf-pap.ping-devops.com}"
+PAP_URL="https://${PAP_PUBLIC_HOST:-paz-pingauthorizepap.ping-devops.com}"
 AUTH="administrator:${PAP_ADMIN_PASSWORD}"
 BRANCH_NAME="AgentGatewayPortfolioMCP"
 # The Global Decision Point PolicySet id inside the snapshot — the package
