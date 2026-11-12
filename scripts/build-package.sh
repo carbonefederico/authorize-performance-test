@@ -83,7 +83,7 @@ exported="$(curl -sk "${auth_headers[@]}" -X POST -H 'Content-Type: application/
 echo "${exported}" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-hdr = next((e for e in data if isinstance(e, dict) and e.get('@class', '').endswith('PackageHeader')), None)
+hdr = next((e for e in data if isinstance(e, dict) and 'PackageHeader' in str(e.get('type', ''))), None)
 sid = (hdr or {}).get('snapshotId')
 if sid != '${head_id}':
     sys.exit(f'export header snapshotId {sid} does not match branch head ${head_id}')
