@@ -113,14 +113,14 @@ PY
     echo "the PAZ nodes poll and load it without a restart."
     ;;
 
-  runtime)
+  paz)
     ensure_repo
     install_or_upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/pingauthorize/values.yaml" \
       --set-string "pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" --timeout=20m
     "${ROOT_DIR}/scripts/verify.sh"
-    echo "runtime: both PAZ pods Ready. Run ./scripts/smoke.sh next."
+    echo "paz: both PAZ pods Ready. Run ./scripts/smoke.sh next."
     ;;
 
   prep|runtime)
