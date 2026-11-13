@@ -60,12 +60,16 @@ ensure_repo() {
 install_or_upgrade() { # install_or_upgrade <release> <values-file> <extra args...>
   local release="$1"; shift
   local values="$1"; shift
+  # Installs THIS project's wrapper chart (helm/paz), which vendors the
+  # upstream ping-devops chart as a dependency and carries the project's own
+  # templates (the JWKS server). The upstream chart is fetched at build time
+  # (helm dependency build) rather than referenced as a repo chart, because
+  # the wrapper's templates only deploy when the wrapper itself is installed.
+  helm dependency build "${ROOT_DIR}/helm/paz" > /dev/null 2>&1
   if helm -n "${NAMESPACE}" status "${release}" > /dev/null 2>&1; then
-    helm -n "${NAMESPACE}" upgrade "${release}" "${CHART_REPO}" \
-      --version "${CHART_VERSION}" -f "${values}" "$@"
+    helm -n "${NAMESPACE}" upgrade "${release}" "${ROOT_DIR}/helm/paz" -f "${values}" "$@"
   else
-    helm -n "${NAMESPACE}" install "${release}" "${CHART_REPO}" \
-      --version "${CHART_VERSION}" -f "${values}" "$@"
+    helm -n "${NAMESPACE}" install "${release}" "${ROOT_DIR}/helm/paz" -f "${values}" "$@"
   fi
 }
 
@@ -115,9 +119,9 @@ PY
     # --- 2. the whole Ping stack, one release ---
     ensure_repo
     install_or_upgrade "${PAZ_RELEASE}" "${ROOT_DIR}/helm/paz/values.yaml" \
-      --set-string "pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}" \
-      --set-string "pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}" \
-      --set-string "pingauthorize.envs.PAZ_RELEASE_NAME=${PAZ_RELEASE}"
+      --set-string "ping-devops.pingauthorize.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}" \
+      --set-string "ping-devops.pingauthorizepap.envs.SERVER_PROFILE_URL=${SERVER_PROFILE_URL}" \
+      --set-string "ping-devops.pingauthorize.envs.PAZ_RELEASE_NAME=${PAZ_RELEASE}"
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \
       -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorizepap" --timeout=15m
     kubectl -n "${NAMESPACE}" wait --for=condition=Ready pod \

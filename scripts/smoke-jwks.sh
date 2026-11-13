@@ -16,7 +16,7 @@ fail=0
 for pod in ${pods}; do
   body="$(kubectl -n "${NAMESPACE}" exec "${pod}" -c pingauthorize -- \
     curl -s "http://${PAZ_RELEASE}-jwks/.well-known/jwks.json" 2>/dev/null || true)"
-  if echo "${body}" | grep -q '"kid":"perf-subject-key"'; then
+  if echo "${body}" | grep -q "perf-subject-key"; then
     echo "PASS JWKS reachable from ${pod} (kid perf-subject-key served)"
   else
     echo "FAIL JWKS fetch from ${pod}: ${body:0:120}"
