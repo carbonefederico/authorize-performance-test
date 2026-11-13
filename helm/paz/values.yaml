@@ -20,7 +20,8 @@ pingauthorize:
   envs:
     SERVER_PROFILE_URL: ''
     SERVER_PROFILE_PATH: server-profiles/pingauthorize
-  workload:
+    # PAZ_RELEASE_NAME (the release name, needed by the dsconfig layer to
+    # build the JWKS service URL) is injected by deploy.sh via --set-string.
     type: StatefulSet
     statefulSet:
       persistentvolume:

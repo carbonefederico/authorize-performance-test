@@ -1,0 +1,12 @@
+{
+ "keys": [
+  {
+   "kty": "RSA",
+   "use": "sig",
+   "alg": "RS256",
+   "kid": "perf-subject-key",
+   "n": "29KZYHiTdSDQbeaQ7jNfvoCDzW4I_HdCR5un4N7rE-xKAyaxoiukak3b-uxIfHSQI5PlWrjI0i8Fli4wy4xEfmUYLtWkWKb2P1G1Iee1BGgtWDAd5MeJDzt0r3MlV9FUxlKYDsUNhl9Q0M83rOxsiunn6yMsh_LX_fdfNHoBQy9d4Yloxc92eTyK5FBgD280t_D6gVpyOCcUh__YtayTuLWgNe2mIUiB_TPJ75TAQ13wrMpp_svv345h4tl0fbVcM3wRIO1I4pu38hcppFOA32MTYuCmPsNh1Z1vZrHnj7JBceBeZqoR_EaJQH5gcPR1dJXpRcD9KVaQ4w10R7gqIQ",
+   "e": "AQAB"
+  }
+ ]
+}

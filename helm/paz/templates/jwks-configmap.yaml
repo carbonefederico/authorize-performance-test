@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-jwks
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  jwks.json: |-
+{{ .Files.Get "loadtest-jwks/jwks.json" | indent 4 }}

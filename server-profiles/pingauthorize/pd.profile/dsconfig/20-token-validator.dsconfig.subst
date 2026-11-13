@@ -1,23 +1,27 @@
-# 20-token-validator.dsconfig.subst — local trusted-certificate model.
-# This stack has no JWKS server: subject tokens are self-signed RS256 by the
-# load generator with the key whose public certificate ships in this profile
-# (instance/server/default/data/perf-subject-cert.pem, CN and kid
-# perf-subject-key). PAZ validates the signature against the imported
-# certificate — no remote fetch, no cache, no rotation behavior on the
-# measured path.
+# 20-token-validator.dsconfig.subst — issuer-publishes/verifier-fetches model.
+# Subject tokens are self-signed RS256 by the load generator (kid
+# perf-subject-key). PAZ validates them against the in-cluster JWKS server
+# (helm/paz/templates/jwks-server.yaml): the issuer publishes the key set at
+# http://<release>-jwks/.well-known/jwks.json, PAZ fetches and caches it —
+# the production distribution model, with key rotation pickup behavior on
+# the path. The JWKS document itself is generated from the same signing key
+# by scripts/generate-jwks.sh, so token shapes are unchanged from the
+# trusted-certificate era; only distribution changed.
 #
-# ${PAZ_CERT_PATH} is the in-container absolute path of the certificate.
-# Verify the server root on first deploy (find / -name perf-subject-cert.pem)
-# and record it in ../../README.md; adjust this file if the overlay lands
-# elsewhere.
+# The JWKS service name is release-derived: the chart deploys <release>-jwks
+# in the same namespace, and PAZ env PAZ_RELEASE_NAME (values.yaml) carries
+# the release name into this substitution.
 
-dsconfig create-trusted-certificate \
-    --certificate-name perf-subject-key \
-    --set "certificate<${PAZ_CERT_PATH}"
+dsconfig create-external-server \
+    --server-name perf-jwks \
+    --type http \
+    --set "base-url:http://${PAZ_RELEASE_NAME}-jwks" \
+    --set hostname-verification-method:strict
 
 dsconfig create-access-token-validator \
     --validator-name PerfSubjectJWT \
     --type jwt \
     --set enabled:true \
     --set allowed-signing-algorithm:RS256 \
-    --set signing-certificate:perf-subject-key
+    --set authorization-server:perf-jwks \
+    --set jwks-endpoint-path:/.well-known/jwks.json

@@ -33,6 +33,33 @@ if (agentIndex >= agentCount) {
 // (envelope.mjs) instead of silently shedding or overloading.
 const rate = distributeRate(totalRate, agentCount);
 
+// Weighted traffic mix over the policy tree's four decision paths. The
+// weights split each agent's per-second rate; with the campaign rates
+// (100/250/500/1000 per 10 agents -> 10/25/50/100 per agent) every split is
+// an integer, and distributeRate's drift guard runs per scenario too.
+const MIX = {
+  read: 0.6,     // read-permit path: the cheap 4-rule ladder
+  session: 0.15, // session methods: initialize/tools-list/ping tool gate
+  hitl: 0.15,    // order submission with HITL approval token: 10-rule ladder
+  deny: 0.1,     // expected denials: full ladder walked to a deny verdict
+};
+// Split THIS AGENT's rate; whole-iteration rounding drifts are caught by the
+// sum check below (fractional weights can round badly at small rates).
+function splitRate(fraction) {
+  return Math.round(rate * fraction);
+}
+const readRate = splitRate(MIX.read);
+const sessionRate = splitRate(MIX.session);
+const hitlRate = splitRate(MIX.hitl);
+// Denials take the remainder: three independent roundings must not break the
+// sum, and the deny mix tolerates the off-by-one a remainder can produce.
+const denyRate = rate - readRate - sessionRate - hitlRate;
+if (readRate + sessionRate + hitlRate + denyRate !== rate) {
+  throw new Error(
+    `Mix rates (${readRate}+${sessionRate}+${hitlRate}+${denyRate}) do not sum to the agent rate ${rate}`,
+  );
+}
+
 const preAllocatedVUs = Number(__ENV.PRE_ALLOCATED_VUS || 25);
 const maxVUs = Number(__ENV.MAX_VUS || 200);
 const p95Ms = Number(__ENV.P95_MS || 500);
@@ -79,16 +106,20 @@ function b64urlJson(object) {
 }
 
 // Build and sign one RS256 subject token (kid perf-subject-key — the name of
-// the trusted certificate PAZ validates against). Returns a promise
-// resolving to the compact JWT.
-async function buildSubjectToken(vu, iter) {
-  const claims = buildClaims({
-    userIndex: (vu + iter) % userCount,
-    iteration: iter,
-    issuer: subjectIssuer,
-    mcpAud,
-    userCount,
-  });
+// the JWK the PAZ validator fetches from the in-cluster JWKS server).
+// extraClaims merges scenario-specific claims (HITL approval binding, denial
+// negatives) over the base VIP fixture before signing.
+async function buildSubjectToken(vu, iter, extraClaims = {}) {
+  const claims = {
+    ...buildClaims({
+      userIndex: (vu + iter) % userCount,
+      iteration: iter,
+      issuer: subjectIssuer,
+      mcpAud,
+      userCount,
+    }),
+    ...extraClaims,
+  };
   const signingInput = `${b64urlJson({ alg: 'RS256', typ: 'JWT', kid: 'perf-subject-key' })}.${b64urlJson(claims)}`;
   const key = await getSigningKey();
   const signature = await crypto.subtle.sign(
@@ -99,13 +130,35 @@ async function buildSubjectToken(vu, iter) {
   return `${signingInput}.${encoding.b64encode(signature, 'rawurl')}`;
 }
 
-// One JSON-RPC tools/call for the read tool — the measured workload's body.
-function rpcBody(userIndex, iter) {
+// One JSON-RPC tools/call body. toolName selects the policy branch; for
+// submit_trade_order the arguments carry the order shape the HITL rule
+// mirrors into the token's tctx block (customerId/symbol/side/quantity/
+// amount/txn) — the approval binding compares them 1:1.
+function rpcBody(userIndex, iter, toolName = 'get_portfolio_summary') {
+  if (toolName === 'submit_trade_order') {
+    const customerId = `CUST-${String((userIndex % userCount) + 1).padStart(5, '0')}`;
+    const order = {
+      customerId,
+      symbol: 'ACME',
+      side: 'SELL',
+      quantity: 3,
+      orderType: 'MARKET',
+      confirmedByUser: true,
+      amount: 3000,
+      txn: `txn-${iter}`,
+    };
+    return JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: toolName, arguments: order },
+      id: iter,
+    });
+  }
   return JSON.stringify({
     jsonrpc: '2.0',
     method: 'tools/call',
     params: {
-      name: 'get_portfolio_summary',
+      name: toolName,
       arguments: {
         customerId: `CUST-${String((userIndex % userCount) + 1).padStart(5, '0')}`,
         txn: `txn-${iter}`,
@@ -119,9 +172,9 @@ export const options = {
   insecureSkipTLSVerify: (__ENV.INSECURE_SKIP_TLS_VERIFY || 'false') === 'true',
   discardResponseBodies: false,
   scenarios: {
-    // Warmup: full-rate ramp that fills connection pools and lets the JVM
-    // JIT-compile hot paths. Its traffic is tagged and excluded from the
-    // measured thresholds; the measured scenario starts after it finishes.
+    // Warmup: full-rate ramp that fills connection pools, lets the JVM
+    // JIT-compile hot paths, and — new in the JWKS model — gives PAZ its
+    // first JWK-set fetch before the measured window opens.
     warmup: {
       executor: 'constant-arrival-rate',
       rate,
@@ -134,26 +187,73 @@ export const options = {
       tags: { phase: 'warmup' },
       startTime: '0s',
     },
-    sideband_decision: {
+    // Measured: the weighted mix. Four arrival-rate scenarios share the
+    // agent's rate; each carries its own tags so the report attributes
+    // latency and outcomes per policy path.
+    mix_read: {
       executor: 'constant-arrival-rate',
-      rate,
+      rate: readRate,
       timeUnit: '1s',
       duration: __ENV.DURATION || '5m',
       preAllocatedVUs,
       maxVUs,
       gracefulStop: '30s',
-      // Starts once the warmup scenario has finished.
       startTime: __ENV.WARMUP || '30s',
-      tags: { phase: 'measured' },
+      exec: 'readIteration',
+      tags: { phase: 'measured', policy_path: 'read_permit' },
+    },
+    mix_session: {
+      executor: 'constant-arrival-rate',
+      rate: sessionRate,
+      timeUnit: '1s',
+      duration: __ENV.DURATION || '5m',
+      preAllocatedVUs,
+      maxVUs,
+      gracefulStop: '30s',
+      startTime: __ENV.WARMUP || '30s',
+      exec: 'sessionIteration',
+      tags: { phase: 'measured', policy_path: 'session_permit' },
+    },
+    mix_hitl: {
+      executor: 'constant-arrival-rate',
+      rate: hitlRate,
+      timeUnit: '1s',
+      duration: __ENV.DURATION || '5m',
+      preAllocatedVUs,
+      maxVUs,
+      gracefulStop: '30s',
+      startTime: __ENV.WARMUP || '30s',
+      exec: 'hitlIteration',
+      tags: { phase: 'measured', policy_path: 'order_hitl_permit' },
+    },
+    mix_deny: {
+      executor: 'constant-arrival-rate',
+      rate: denyRate,
+      timeUnit: '1s',
+      duration: __ENV.DURATION || '5m',
+      preAllocatedVUs,
+      maxVUs,
+      gracefulStop: '30s',
+      startTime: __ENV.WARMUP || '30s',
+      exec: 'denyIteration',
+      tags: { phase: 'measured', policy_path: 'expected_deny' },
     },
   },
   thresholds: {
-    // Latency and success gates apply to the MEASURED scenario only
-    // (sub-metrics scoped by scenario name); warmup traffic exists to prime
-    // the platform and must not gate.
-    'sideband_decision_latency{scenario:sideband_decision}': [`p(95)<${p95Ms}`],
-    'sideband_decision_success{scenario:sideband_decision}': [`rate>=${minimumSuccessRate}`],
-    'http_req_failed{scenario:sideband_decision}': ['rate<0.01'],
+    // Latency and success gates apply to each MEASURED scenario (sub-metrics
+    // scoped by scenario name); warmup traffic exists to prime the platform
+    // and must not gate.
+    'sideband_decision_latency{scenario:mix_read}': [`p(95)<${p95Ms}`],
+    'sideband_decision_latency{scenario:mix_session}': [`p(95)<${p95Ms}`],
+    'sideband_decision_latency{scenario:mix_hitl}': [`p(95)<${p95Ms}`],
+    'sideband_decision_latency{scenario:mix_deny}': [`p(95)<${p95Ms}`],
+    'sideband_decision_success{scenario:mix_read}': [`rate>=${minimumSuccessRate}`],
+    'sideband_decision_success{scenario:mix_session}': [`rate>=${minimumSuccessRate}`],
+    'sideband_decision_success{scenario:mix_hitl}': [`rate>=${minimumSuccessRate}`],
+    // The deny scenario's "success" is landing the EXPECTED denial; a permit
+    // there is a policy failure, scored the same way.
+    'sideband_decision_success{scenario:mix_deny}': [`rate>=${minimumSuccessRate}`],
+    'http_req_failed': ['rate<0.01'],
     // Dropped iterations invalidate a stress stage: when required concurrency
     // (rate x latency) exceeds maxVUs, k6 silently sheds load and latency
     // looks fine because the excess requests were never sent. Any drop
@@ -166,19 +266,122 @@ export const options = {
   },
 };
 
-// Warmup iterations run the same measured path — they warm connections, JIT
-// and caches — but their metric points carry phase=warmup so the report can
-// exclude them.
+// Warmup iterations run the read path — they warm connections, JIT and the
+// JWKS cache — with phase=warmup tags so the report can exclude them.
 export async function warmupIteration() {
-  await doDecision(__VU, __ITER);
+  await doRead(__VU, __ITER);
+}
+
+export async function readIteration() {
+  await doRead(__VU, __ITER);
+}
+
+// Session methods hit the Allow Session Methods branch: same token shape,
+// JSON-RPC method tools/list (a permitted session method).
+export async function sessionIteration() {
+  const token = await buildSubjectToken(__VU, __ITER);
+  await decide({
+    scenario: 'mix_session',
+    token,
+    body: rpcBody(__VU, __ITER, 'tools/list'),
+    expectPermit: true,
+  });
+}
+
+// HITL order path: the token binds the approval to THIS order (approved_for
+// + txn + the full tctx mirror of the order body), the body submits a 3k
+// order inside the approval band. All ten Allow-Orders comparisons must pass.
+export async function hitlIteration() {
+  const userIndex = (__VU + __ITER) % userCount;
+  const customerId = `CUST-${String(userIndex + 1).padStart(5, '0')}`;
+  const txn = `txn-${__ITER}`;
+  const order = {
+    customerId,
+    symbol: 'ACME',
+    side: 'SELL',
+    quantity: 3,
+    orderType: 'MARKET',
+    confirmedByUser: true,
+    amount: 3000,
+    txn,
+  };
+  const token = await buildSubjectToken(__VU, __ITER, {
+    approved_for: 'submit_trade_order',
+    txn,
+    tctx: {
+      tool: 'submit_trade_order',
+      customerId,
+      symbol: 'ACME',
+      side: 'SELL',
+      quantity: 3,
+      amount: 3000,
+    },
+  });
+  await decide({
+    scenario: 'mix_hitl',
+    token,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      params: { name: 'submit_trade_order', arguments: order },
+      id: __ITER,
+    }),
+    expectPermit: true,
+  });
+}
+
+// Expected denials rotate through the ladder's negative fixtures: an
+// undeclared acting agent (R2), a token without act.sub (R2 vacuous), an
+// oversized order (Deny Oversized), and a wrong-audience token (R1). Each
+// MUST come back denied — a permit is a policy failure.
+export async function denyIteration() {
+  const which = (__VU + __ITER) % 4;
+  let token;
+  let body;
+  switch (which) {
+    case 0: // undeclared acting agent -> R2 denies
+      token = await buildSubjectToken(__VU, __ITER, { act: { sub: 'marketing_agent' } });
+      body = rpcBody(__VU, __ITER, 'get_portfolio_summary');
+      break;
+    case 1: // no act.sub at all -> R2 denies (agent identity mismatch)
+      token = await buildSubjectToken(__VU, __ITER, { act: undefined });
+      body = rpcBody(__VU, __ITER, 'get_portfolio_summary');
+      break;
+    case 2: // oversized order (50k > 20k threshold) -> Deny Oversized
+      token = await buildSubjectToken(__VU, __ITER, {
+        approved_for: 'submit_trade_order',
+        txn: `txn-${__ITER}`,
+        tctx: {
+          tool: 'submit_trade_order',
+          customerId: `CUST-${String(((__VU + __ITER) % userCount) + 1).padStart(5, '0')}`,
+          symbol: 'ACME',
+          side: 'SELL',
+          quantity: 100,
+          amount: 50000,
+        },
+      });
+      body = rpcBody(__VU, __ITER, 'submit_trade_order').replace('"amount":3000', '"amount":50000').replace('"quantity":3', '"quantity":100');
+      break;
+    default: // wrong audience (gateway root, not the MCP resource) -> R1 denies
+      token = await buildSubjectToken(__VU, __ITER, {
+        aud: mcpAud.replace(/\/mcp\/portfolio$/, ''),
+      });
+      body = rpcBody(__VU, __ITER, 'get_portfolio_summary');
+      break;
+  }
+  await decide({ scenario: 'mix_deny', token, body, expectPermit: false });
 }
 
 export default async function () {
-  await doDecision(__VU, __ITER);
+  await doRead(__VU, __ITER);
 }
 
-async function doDecision(vu, iter) {
+async function doRead(vu, iter) {
   const token = await buildSubjectToken(vu, iter);
+  await decide({ scenario: 'mix_read', token, body: rpcBody(vu, iter), expectPermit: true });
+}
+
+async function decide({ scenario, token, body, expectPermit }) {
   const envelope = buildSidebandEnvelope({
     method: 'POST',
     url: envelopeUrl,
@@ -188,9 +391,9 @@ async function doDecision(vu, iter) {
       authorization: `Bearer ${token}`,
       host: mcpHost,
     },
-    body: rpcBody(vu, iter),
-    sourceIp: `10.0.0.${(vu % 250) + 1}`,
-    sourcePort: 40000 + (iter % 20000),
+    body,
+    sourceIp: `10.0.0.${(__VU % 250) + 1}`,
+    sourcePort: 40000 + (__ITER % 20000),
     httpVersion: '1.1',
   });
 
@@ -214,9 +417,10 @@ async function doDecision(vu, iter) {
   }
 
   const permitted = isPermit(response.status, payload);
+  const expected = expectPermit ? permitted : !permitted;
   check(response, {
-    'PAZ permitted the decision': () => permitted,
+    'PAZ returned the expected verdict': () => expected,
   });
-  successRate.add(permitted);
+  successRate.add(expected);
   if (!permitted) denials.add(1);
 }
