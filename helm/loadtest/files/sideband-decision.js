@@ -277,13 +277,20 @@ export async function readIteration() {
 }
 
 // Session methods hit the Allow Session Methods branch: same token shape,
-// JSON-RPC method tools/list (a permitted session method).
+// but the JSON-RPC method itself is the session method (MCP Method resolves
+// from $.method of the body — initialize/tools/list/ping are TOP-LEVEL
+// jsonrpc methods, not tools/call names).
 export async function sessionIteration() {
   const token = await buildSubjectToken(__VU, __ITER);
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'tools/list',
+    id: __ITER,
+  });
   await decide({
     scenario: 'mix_session',
     token,
-    body: rpcBody(__VU, __ITER, 'tools/list'),
+    body,
     expectPermit: true,
   });
 }
