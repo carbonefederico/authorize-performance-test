@@ -20,7 +20,7 @@ mkdir -p "${run_dir}"
 
 pods="$(kubectl -n "${NAMESPACE}" get pods \
   -l "app.kubernetes.io/instance=${PAZ_RELEASE},app.kubernetes.io/name=pingauthorize" \
-  -o jsonpath='{range .items[*]}{.metadata.name}{end}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' || true)"
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -v '^$' || true)"
 
 if [[ -z "${pods}" ]]; then
   echo "scrape-monitor: no PAZ pods found; writing status marker" >&2
@@ -28,16 +28,15 @@ if [[ -z "${pods}" ]]; then
   exit 0
 fi
 
-# The admin bind password: the lab constant the images boot with (.env's
-# PAP_ADMIN_PASSWORD, the DevOps default).
-admin_pw="${PAP_ADMIN_PASSWORD:-}"
-
+# The admin bind: the images boot with cn=administrator and a generated
+# password mounted at /tmp/secrets/root-user-password inside each PAZ pod
+# (the same file dsconfig's tool properties reference). Never a literal.
 status="ok"
 for pod in ${pods}; do
   out="${run_dir}/monitor-paz-${pod}.json"
   if kubectl -n "${NAMESPACE}" exec "${pod}" -c pingauthorize -- \
-      bin/ldapsearch --hostname localhost --port 1636 --useSSL \
-      --bindDN "cn=Directory Manager" --bindPassword "${admin_pw}" \
+      /opt/out/instance/bin/ldapsearch --hostname localhost --port 1636 --useSSL \
+      --bindDN "cn=administrator" --bindPasswordFile /tmp/secrets/root-user-password \
       --baseDN cn=monitor --searchScope sub "(cn=*Gateway*)" "*" "+" \
       > "${run_dir}/monitor-paz-${pod}.ldif" 2> "${run_dir}/monitor-paz-${pod}.err" \
       && [[ -s "${run_dir}/monitor-paz-${pod}.ldif" ]]; then
